@@ -1,8 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.services.database import get_db
 from app.services.auth import create_access_token
 from passlib.context import CryptContext
+from fastapi.security import OAuth2PasswordRequestForm
+
 
 router = APIRouter()
 
@@ -46,12 +48,13 @@ def create_user(user: UserCreate):
         
         return {"id": cursor.lastrowid, "email": user.email, "message": "User created successfully"}
 
+
 @router.post("/users/login")
-def login(credentials: UserLogin):
+def login(credentials: OAuth2PasswordRequestForm = Depends()):
     with get_db() as db:
         user = db.execute(
             "SELECT id, email, password_hash FROM users WHERE email = ? AND deleted_at IS NULL",
-            (credentials.email,)
+            (credentials.username,)
         ).fetchone()
         
         if not user or not pwd_context.verify(credentials.password, user["password_hash"]):
