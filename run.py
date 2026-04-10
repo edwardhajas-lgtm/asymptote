@@ -1,5 +1,6 @@
 import sqlite3
-import os
+import uvicorn
+from app import app
 
 def init_db():
     db_path = "database/asymptote.db"
@@ -18,3 +19,4 @@ def init_db():
 
 if __name__ == "__main__":
     init_db()
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
