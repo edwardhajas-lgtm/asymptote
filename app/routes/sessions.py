@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app.services.database import get_db
 from app.services.auth import get_current_user
+from app.services.algorithm import process_session
 
 router = APIRouter()
 
@@ -120,7 +121,13 @@ def complete_session(session_id: int, current_user: dict = Depends(get_current_u
             (session_id,)
         )
 
-        return {"message": "Session completed", "session_id": session_id}
+    results = process_session(session_id, current_user["id"])
+
+    return {
+        "message": "Session completed",
+        "session_id": session_id,
+        "algorithm_results": results
+    }
 
 @router.get("/sessions")
 def get_sessions(current_user: dict = Depends(get_current_user)):
