@@ -95,6 +95,71 @@ def store_metric(db, user_id: int, exercise_id: int, metric_type: str, value: fl
         (user_id, exercise_id, metric_type, value)
     )
 
+def check_rep_failure(sets: list, reps_target_min: int) -> bool:
+    for s in sets:
+        if s["reps_completed"] is not None:
+            if s["reps_completed"] < reps_target_min:
+                return True
+    return False
+
+def check_bad_session(session: dict) -> bool:
+    readiness = session.get("readiness_score")
+    stress = session.get("stress_level")
+    sleep_quality = session.get("sleep_quality")
+    if readiness == 3:
+        return True
+    if readiness == 2 and stress == 3:
+        return True
+    if sleep_quality == 3 and stress == 3:
+        return True
+    return False
+
+def check_rpe_drift(db, user_id: int, exercise_id: int, lookback_weeks: int = 5, threshold: float = 0.5) -> bool:
+    rows = db.execute(
+        """SELECT s.session_id, AVG(m.value) as avg_rpe,
+        strftime('%Y-%W', se.session_datetime) as week
+        FROM user_exercise_metrics m
+        JOIN sets s ON m.exercise_id = s.exercise_id
+        JOIN sessions se ON s.session_id = se.id
+        WHERE m.user_id = ?
+        AND m.exercise_id = ?
+        AND m.metric_type = 'weighted_rpe'
+        AND se.session_datetime >= datetime('now', ? || ' days')
+        AND se.session_type = 'normal'
+        GROUP BY week
+        ORDER BY week ASC""",
+        (user_id, exercise_id, -(lookback_weeks * 7))
+    ).fetchall()
+
+    if len(rows) < 3:
+        return False
+
+    weekly_rpes = [row["avg_rpe"] for row in rows]
+    consecutive_increases = 0
+    for i in range(1, len(weekly_rpes)):
+        if weekly_rpes[i] - weekly_rpes[i-1] >= threshold:
+            consecutive_increases += 1
+        else:
+            consecutive_increases = 0
+        if consecutive_increases >= 2:
+            return True
+
+    return False
+
+def get_user_algorithm_setting(db, user_id: int, setting_name: str, default):
+    row = db.execute(
+        """SELECT value FROM user_algorithm_settings
+        WHERE user_id = ? AND setting_name = ?
+        ORDER BY updated_at DESC LIMIT 1""",
+        (user_id, setting_name)
+    ).fetchone()
+    if row:
+        try:
+            return type(default)(row["value"])
+        except:
+            return default
+    return default
+
 def process_session(session_id: int, user_id: int):
     with get_db() as db:
         user = db.execute(
@@ -159,12 +224,62 @@ def process_session(session_id: int, user_id: int):
             if tonnage:
                 store_metric(db, user_id, exercise_id, "tonnage", tonnage)
 
+            session_data = db.execute(
+                "SELECT * FROM sessions WHERE id = ?",
+                (session_id,)
+            ).fetchone()
+
+            failure_detected = False
+            bad_session = False
+            deload_recommended = False
+            final_weight = next_weight
+
+            exercise_data = db.execute(
+                "SELECT target_rep_min FROM exercises WHERE id = ?",
+                (exercise_id,)
+            ).fetchone()
+
+            if exercise_data and reps_completed:
+                failure_detected = check_rep_failure(
+                    exercise_sets,
+                    exercise_data["target_rep_min"]
+                )
+
+            if failure_detected:
+                bad_session = check_bad_session(dict(session_data))
+                if bad_session:
+                    final_weight = weight_used
+                else:
+                    lookback_weeks = get_user_algorithm_setting(
+                        db, user_id, "deload_lookback_weeks", 5
+                    )
+                    deload_recommended = check_rpe_drift(
+                        db, user_id, exercise_id, lookback_weeks
+                    )
+                    if not deload_recommended:
+                        reset_pct = get_user_algorithm_setting(
+                            db, user_id, "reset_percentage", RESET_PERCENTAGE
+                        )
+                        estimated_1rm_value = estimated_1rm or weight_used
+                        final_weight = round(estimated_1rm_value * reset_pct, 2)
+
+            if not failure_detected:
+                lookback_weeks = get_user_algorithm_setting(
+                    db, user_id, "deload_lookback_weeks", 5
+                )
+                deload_recommended = check_rpe_drift(
+                    db, user_id, exercise_id, lookback_weeks
+                )
+
             results[exercise_id] = {
                 "weighted_rpe": weighted_rpe,
                 "fatigue_rate": fatigue_rate,
                 "estimated_1rm": estimated_1rm,
-                "next_weight_recommended": next_weight,
-                "tonnage": tonnage
+                "next_weight_recommended": final_weight,
+                "tonnage": tonnage,
+                "failure_detected": failure_detected,
+                "bad_session": bad_session,
+                "deload_recommended": deload_recommended
             }
 
         return results
