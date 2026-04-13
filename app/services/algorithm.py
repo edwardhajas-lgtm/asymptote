@@ -7,6 +7,17 @@ SIMPLE_MODE_INCREASE = 1.03
 SIMPLE_MODE_DECREASE = 0.95
 SIMPLE_MODE_INCREASE_AGGRESSIVE = 1.06
 
+BASE_RECOVERY_HOURS = {
+    "legs": 72,
+    "back": 48,
+    "chest": 48,
+    "shoulders": 48,
+    "arms": 24,
+    "core": 24,
+}
+RECOVERY_HOURS_DEFAULT = 48
+RECOVERY_BAD_SESSION_BONUS = 12
+
 RPE_MULTIPLIERS = {
     5: 2.0,
     6: 1.5,
@@ -200,6 +211,35 @@ def supports_1rm_tracking(db, user_id, exercise_id):
     )
     return bool(int(override))
 
+def get_avg_tonnage(db, user_id, exercise_id, weeks=5):
+    row = db.execute(
+        """SELECT AVG(value) as avg_tonnage FROM user_exercise_metrics
+        WHERE user_id = ? AND exercise_id = ? AND metric_type = 'tonnage'
+        AND calculated_at >= datetime('now', ? || ' days')""",
+        (user_id, exercise_id, -(weeks * 7))
+    ).fetchone()
+    if row and row["avg_tonnage"]:
+        return row["avg_tonnage"]
+    return None
+
+def estimate_recovery_hours(muscle_group, weighted_rpe, tonnage, avg_tonnage, bad_session):
+    base = BASE_RECOVERY_HOURS.get(muscle_group, RECOVERY_HOURS_DEFAULT)
+
+    rpe_modifier = 1.0
+    if weighted_rpe is not None:
+        rpe_modifier = max(0.8, min(1.3, 0.8 + (weighted_rpe - 6) * 0.125))
+
+    tonnage_modifier = 1.0
+    if tonnage and avg_tonnage:
+        ratio = tonnage / avg_tonnage
+        tonnage_modifier = max(0.7, min(1.4, 1.0 + (ratio - 1.0) * 0.4))
+
+    recovery = base * rpe_modifier * tonnage_modifier
+    if bad_session:
+        recovery += RECOVERY_BAD_SESSION_BONUS
+
+    return round(recovery, 1)
+
 def process_session(session_id: int, user_id: int):
     with get_db() as db:
         user = db.execute(
@@ -217,7 +257,7 @@ def process_session(session_id: int, user_id: int):
             return {"session_type": "shock", "skipped": True, "reason": "shock sessions excluded from algorithm"}
 
         sets = db.execute(
-            """SELECT s.*, e.exercise_type FROM sets s
+            """SELECT s.*, e.exercise_type, e.muscle_group FROM sets s
             JOIN exercises e ON s.exercise_id = e.id
             WHERE s.session_id = ?
             ORDER BY s.exercise_id, s.set_number""",
@@ -327,6 +367,13 @@ def process_session(session_id: int, user_id: int):
                     db, user_id, exercise_id, lookback_weeks
                 )
 
+            muscle_group = exercise_sets[0].get("muscle_group")
+            avg_tonnage = get_avg_tonnage(db, user_id, exercise_id)
+            recovery_hours = estimate_recovery_hours(
+                muscle_group, weighted_rpe, tonnage, avg_tonnage, bad_session
+            )
+            store_metric(db, user_id, exercise_id, "recovery_hours", recovery_hours)
+
             results[exercise_id] = {
                 "weighted_rpe": weighted_rpe,
                 "fatigue_rate": fatigue_rate,
@@ -337,7 +384,8 @@ def process_session(session_id: int, user_id: int):
                 "bad_session": bad_session,
                 "deload_recommended": deload_recommended,
                 "personal_records": prs,
-                "estimated_1rm_pr": estimated_1rm_pr
+                "estimated_1rm_pr": estimated_1rm_pr,
+                "recovery_hours": recovery_hours
             }
 
         return results
