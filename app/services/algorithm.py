@@ -158,7 +158,7 @@ def get_user_algorithm_setting(db, user_id, setting_name, default):
     row = db.execute(
         """SELECT value FROM user_algorithm_settings
         WHERE user_id = ? AND setting_name = ?
-        ORDER BY updated_at DESC LIMIT 1""",
+        ORDER BY updated_at DESC, id DESC LIMIT 1""",
         (user_id, setting_name)
     ).fetchone()
     if row:
