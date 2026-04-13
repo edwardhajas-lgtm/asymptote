@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app.services.database import get_db
 from app.services.auth import get_current_user
-from app.services.algorithm import process_session
+from app.services.algorithm import process_session, generate_deload_plan
 
 router = APIRouter()
 
@@ -161,3 +161,22 @@ def get_sets(session_id: int, current_user: dict = Depends(get_current_user)):
         ).fetchall()
 
         return [dict(s) for s in sets]
+
+@router.post("/sessions/{session_id}/generate-deload")
+def generate_deload(session_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        session = db.execute(
+            "SELECT id FROM sessions WHERE id = ? AND user_id = ?",
+            (session_id, current_user["id"])
+        ).fetchone()
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        planned = generate_deload_plan(db, current_user["id"], session_id)
+
+    return {
+        "message": "Deload plan generated",
+        "session_id": session_id,
+        "planned_sets": planned
+    }

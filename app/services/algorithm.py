@@ -1,4 +1,5 @@
 from app.services.database import get_db
+from datetime import datetime, timedelta
 
 K_FATIGUE_MODIFIER = 0
 TARGET_FATIGUE_RATE = 0.75
@@ -239,6 +240,72 @@ def estimate_recovery_hours(muscle_group, weighted_rpe, tonnage, avg_tonnage, ba
         recovery += RECOVERY_BAD_SESSION_BONUS
 
     return round(recovery, 1)
+
+def generate_deload_plan(db, user_id, session_id):
+    volume_reduction = get_user_algorithm_setting(
+        db, user_id, "deload_volume_reduction", 0.5
+    )
+    intensity_reduction = get_user_algorithm_setting(
+        db, user_id, "deload_intensity_reduction", 0.2
+    )
+
+    sets = db.execute(
+        """SELECT s.exercise_id, s.weight_used, s.reps_target_min, s.reps_target_max, s.id as set_id
+        FROM sets s
+        WHERE s.session_id = ?
+        ORDER BY s.exercise_id, s.set_number""",
+        (session_id,)
+    ).fetchall()
+
+    exercise_ids = list(dict.fromkeys(s["exercise_id"] for s in sets))
+    base_date = datetime.now().date() + timedelta(days=1)
+    planned = []
+
+    for exercise_id in exercise_ids:
+        exercise_sets = [s for s in sets if s["exercise_id"] == exercise_id]
+        last_set = exercise_sets[-1]
+        deload_weight = round((last_set["weight_used"] or 0) * (1 - intensity_reduction), 2)
+
+        pref = db.execute(
+            """SELECT target_sets_per_session, target_sessions_per_week
+            FROM user_exercise_preferences
+            WHERE user_id = ? AND exercise_id = ?
+            ORDER BY created_at DESC LIMIT 1""",
+            (user_id, exercise_id)
+        ).fetchone()
+
+        if pref:
+            num_sets = max(1, round(pref["target_sets_per_session"] * (1 - volume_reduction)))
+            sessions_per_week = pref["target_sessions_per_week"]
+        else:
+            num_sets = 1
+            sessions_per_week = 1
+
+        interval = 7 / sessions_per_week
+        for session_num in range(sessions_per_week):
+            planned_date = base_date + timedelta(days=round(session_num * interval))
+            for set_num in range(1, num_sets + 1):
+                cursor = db.execute(
+                    """INSERT INTO planned_sets
+                    (user_id, planned_date, exercise_id, set_number,
+                    weight_recommended, reps_target_min, reps_target_max,
+                    generated_from_set_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (user_id, planned_date.isoformat(), exercise_id, set_num,
+                     deload_weight, last_set["reps_target_min"], last_set["reps_target_max"],
+                     last_set["set_id"])
+                )
+                planned.append({
+                    "id": cursor.lastrowid,
+                    "exercise_id": exercise_id,
+                    "planned_date": planned_date.isoformat(),
+                    "set_number": set_num,
+                    "weight_recommended": deload_weight,
+                    "reps_target_min": last_set["reps_target_min"],
+                    "reps_target_max": last_set["reps_target_max"],
+                })
+
+    return planned
 
 def process_session(session_id: int, user_id: int):
     with get_db() as db:
