@@ -5,6 +5,7 @@ TARGET_FATIGUE_RATE = 0.75
 RESET_PERCENTAGE = 0.70
 SIMPLE_MODE_INCREASE = 1.03
 SIMPLE_MODE_DECREASE = 0.95
+SIMPLE_MODE_INCREASE_AGGRESSIVE = 1.06
 
 RPE_MULTIPLIERS = {
     5: 2.0,
@@ -69,25 +70,23 @@ def calculate_epley_1rm(weight: float, reps: int) -> float:
         return weight
     return round(weight * (1 + reps / 30), 2)
 
-def calculate_weight_recommendation(
-    weight_used: float,
-    weighted_rpe: float,
-    fatigue_rate: float,
-    tracking_preset: str
-) -> float:
-    if tracking_preset == 'simple' or weighted_rpe is None:
+def calculate_weight_recommendation(weight_used, weighted_rpe, fatigue_rate, tracking_preset,
+                                    reps_completed=None, reps_target_min=None, reps_target_max=None):
+    if tracking_preset == "simple" or weighted_rpe is None:
+        if reps_completed is not None and reps_target_min is not None:
+            if reps_target_max is not None and reps_completed > reps_target_max:
+                return round(weight_used * SIMPLE_MODE_INCREASE_AGGRESSIVE, 2)
+            if reps_completed < reps_target_min:
+                return round(weight_used * SIMPLE_MODE_DECREASE, 2)
         return round(weight_used * SIMPLE_MODE_INCREASE, 2)
-
     base_multiplier = get_rpe_multiplier(weighted_rpe)
-
     fatigue_modifier = 0
     if fatigue_rate is not None:
         fatigue_modifier = (TARGET_FATIGUE_RATE - fatigue_rate) * K_FATIGUE_MODIFIER
-
     final_multiplier = base_multiplier * (1 + fatigue_modifier)
     return round(weight_used * final_multiplier, 2)
 
-def store_metric(db, user_id: int, exercise_id: int, metric_type: str, value: float):
+def store_metric(db, user_id, exercise_id, metric_type, value):
     db.execute(
         """INSERT INTO user_exercise_metrics 
         (user_id, exercise_id, metric_type, value)
@@ -95,14 +94,14 @@ def store_metric(db, user_id: int, exercise_id: int, metric_type: str, value: fl
         (user_id, exercise_id, metric_type, value)
     )
 
-def check_rep_failure(sets: list, reps_target_min: int) -> bool:
+def check_rep_failure(sets, reps_target_min):
     for s in sets:
         if s["reps_completed"] is not None:
             if s["reps_completed"] < reps_target_min:
                 return True
     return False
 
-def check_bad_session(session: dict) -> bool:
+def check_bad_session(session):
     readiness = session.get("readiness_score")
     stress = session.get("stress_level")
     sleep_quality = session.get("sleep_quality")
@@ -114,26 +113,24 @@ def check_bad_session(session: dict) -> bool:
         return True
     return False
 
-def check_rpe_drift(db, user_id: int, exercise_id: int, lookback_weeks: int = 5, threshold: float = 0.5) -> bool:
+def check_rpe_drift(db, user_id, exercise_id, lookback_weeks=5, threshold=0.5):
     rows = db.execute(
-        """SELECT s.session_id, AVG(m.value) as avg_rpe,
-        strftime('%Y-%W', se.session_datetime) as week
+        """SELECT AVG(m.value) as avg_rpe,
+        strftime("%Y-%W", se.session_datetime) as week
         FROM user_exercise_metrics m
-        JOIN sets s ON m.exercise_id = s.exercise_id
+        JOIN sets s ON m.exercise_id = s.exercise_id AND m.user_id = se.user_id
         JOIN sessions se ON s.session_id = se.id
         WHERE m.user_id = ?
         AND m.exercise_id = ?
-        AND m.metric_type = 'weighted_rpe'
-        AND se.session_datetime >= datetime('now', ? || ' days')
-        AND se.session_type = 'normal'
+        AND m.metric_type = "weighted_rpe"
+        AND se.session_datetime >= datetime("now", ? || " days")
+        AND se.session_type = "normal"
         GROUP BY week
         ORDER BY week ASC""",
         (user_id, exercise_id, -(lookback_weeks * 7))
     ).fetchall()
-
     if len(rows) < 3:
         return False
-
     weekly_rpes = [row["avg_rpe"] for row in rows]
     consecutive_increases = 0
     for i in range(1, len(weekly_rpes)):
@@ -143,10 +140,9 @@ def check_rpe_drift(db, user_id: int, exercise_id: int, lookback_weeks: int = 5,
             consecutive_increases = 0
         if consecutive_increases >= 2:
             return True
-
     return False
 
-def get_user_algorithm_setting(db, user_id: int, setting_name: str, default):
+def get_user_algorithm_setting(db, user_id, setting_name, default):
     row = db.execute(
         """SELECT value FROM user_algorithm_settings
         WHERE user_id = ? AND setting_name = ?
@@ -160,14 +156,65 @@ def get_user_algorithm_setting(db, user_id: int, setting_name: str, default):
             return default
     return default
 
+def check_and_store_pr(db, user_id, exercise_id, weight_used, reps_completed):
+    if not weight_used or not reps_completed:
+        return None
+    metric_type = f"pr_{reps_completed}rm"
+    existing_pr = db.execute(
+        """SELECT value FROM user_exercise_metrics
+        WHERE user_id = ? AND exercise_id = ? AND metric_type = ?
+        ORDER BY value DESC LIMIT 1""",
+        (user_id, exercise_id, metric_type)
+    ).fetchone()
+    if not existing_pr or weight_used > existing_pr["value"]:
+        store_metric(db, user_id, exercise_id, metric_type, weight_used)
+        return {
+            "new_pr": True,
+            "reps": reps_completed,
+            "weight": weight_used,
+            "metric_type": metric_type
+        }
+    return None
+
+def check_estimated_1rm_pr(db, user_id, exercise_id, estimated_1rm):
+    if not estimated_1rm:
+        return False
+    existing = db.execute(
+        """SELECT MAX(value) as max_value FROM user_exercise_metrics
+        WHERE user_id = ? AND exercise_id = ? AND metric_type = 'estimated_1rm'""",
+        (user_id, exercise_id)
+    ).fetchone()
+    if not existing or not existing["max_value"]:
+        return True
+    return estimated_1rm > existing["max_value"]
+
+def supports_1rm_tracking(db, user_id, exercise_id):
+    exercise = db.execute(
+        "SELECT supports_1rm FROM exercises WHERE id = ?",
+        (exercise_id,)
+    ).fetchone()
+    if exercise and exercise["supports_1rm"]:
+        return True
+    override = get_user_algorithm_setting(
+        db, user_id, f"1rm_tracking_exercise_{exercise_id}", 0
+    )
+    return bool(int(override))
+
 def process_session(session_id: int, user_id: int):
     with get_db() as db:
         user = db.execute(
             "SELECT tracking_preset FROM users WHERE id = ?",
             (user_id,)
         ).fetchone()
-
         tracking_preset = user["tracking_preset"] if user else "simple"
+
+        session_data = db.execute(
+            "SELECT * FROM sessions WHERE id = ?",
+            (session_id,)
+        ).fetchone()
+
+        if session_data and session_data["session_type"] == "shock":
+            return {"session_type": "shock", "skipped": True, "reason": "shock sessions excluded from algorithm"}
 
         sets = db.execute(
             """SELECT s.*, e.exercise_type FROM sets s
@@ -176,16 +223,12 @@ def process_session(session_id: int, user_id: int):
             ORDER BY s.exercise_id, s.set_number""",
             (session_id,)
         ).fetchall()
-
         sets = [dict(s) for s in sets]
-
         exercise_ids = list(set(s["exercise_id"] for s in sets))
-
         results = {}
 
         for exercise_id in exercise_ids:
             exercise_sets = [s for s in sets if s["exercise_id"] == exercise_id]
-
             exercise_sets = calculate_fatigue_index(exercise_sets)
             for s in exercise_sets:
                 if s["fatigue_index"] is not None:
@@ -196,17 +239,18 @@ def process_session(session_id: int, user_id: int):
 
             weighted_rpe = calculate_weighted_rpe(exercise_sets)
             fatigue_rate = calculate_fatigue_rate(exercise_sets)
-
             last_set = exercise_sets[-1]
             weight_used = last_set["weight_used"]
             reps_completed = last_set["reps_completed"]
 
             next_weight = None
             estimated_1rm = None
-
             if weight_used and reps_completed:
                 next_weight = calculate_weight_recommendation(
-                    weight_used, weighted_rpe, fatigue_rate, tracking_preset
+                    weight_used, weighted_rpe, fatigue_rate, tracking_preset,
+                    reps_completed=reps_completed,
+                    reps_target_min=last_set["reps_target_min"],
+                    reps_target_max=last_set["reps_target_max"]
                 )
                 estimated_1rm = calculate_epley_1rm(weight_used, reps_completed)
 
@@ -219,15 +263,27 @@ def process_session(session_id: int, user_id: int):
                 store_metric(db, user_id, exercise_id, "weighted_rpe", weighted_rpe)
             if fatigue_rate is not None:
                 store_metric(db, user_id, exercise_id, "fatigue_rate", fatigue_rate)
-            if estimated_1rm:
-                store_metric(db, user_id, exercise_id, "estimated_1rm", estimated_1rm)
             if tonnage:
                 store_metric(db, user_id, exercise_id, "tonnage", tonnage)
 
-            session_data = db.execute(
-                "SELECT * FROM sessions WHERE id = ?",
-                (session_id,)
-            ).fetchone()
+            estimated_1rm_pr = False
+            if supports_1rm_tracking(db, user_id, exercise_id) and estimated_1rm:
+                estimated_1rm_pr = check_estimated_1rm_pr(
+                    db, user_id, exercise_id, estimated_1rm
+                )
+
+            if estimated_1rm:
+                store_metric(db, user_id, exercise_id, "estimated_1rm", estimated_1rm)
+
+            prs = []
+            for s in exercise_sets:
+                if s["weight_used"] and s["reps_completed"]:
+                    pr = check_and_store_pr(
+                        db, user_id, exercise_id,
+                        s["weight_used"], s["reps_completed"]
+                    )
+                    if pr:
+                        prs.append(pr)
 
             failure_detected = False
             bad_session = False
@@ -279,7 +335,9 @@ def process_session(session_id: int, user_id: int):
                 "tonnage": tonnage,
                 "failure_detected": failure_detected,
                 "bad_session": bad_session,
-                "deload_recommended": deload_recommended
+                "deload_recommended": deload_recommended,
+                "personal_records": prs,
+                "estimated_1rm_pr": estimated_1rm_pr
             }
 
         return results
