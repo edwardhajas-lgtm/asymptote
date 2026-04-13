@@ -4,7 +4,8 @@ from app.services.database import get_db
 from app.services.auth import create_access_token
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordRequestForm
-
+from typing import Optional
+from app.services.auth import get_current_user
 
 router = APIRouter()
 
@@ -21,6 +22,14 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
+
+class UserUpdate(BaseModel):
+    date_of_birth: Optional[str] = None
+    sex: Optional[str] = None
+    bodyweight: Optional[float] = None
+    training_experience_years: Optional[int] = None
+    tracking_preset: Optional[str] = None
+    training_goal: Optional[str] = None
 
 @router.post("/users")
 def create_user(user: UserCreate):
@@ -63,3 +72,19 @@ def login(credentials: OAuth2PasswordRequestForm = Depends()):
         token = create_access_token(user["id"], user["email"])
         
         return {"access_token": token, "token_type": "bearer"}
+
+@router.patch("/users/me")
+def update_user(user: UserUpdate, current_user: dict = Depends(get_current_user)):
+    updates = {k: v for k, v in user.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail = "No fields provided")
+    fields = ", ".join(f"{k} = ?" for k in updates)                              
+    values = list(updates.values()) + [current_user["id"]]
+                                                                                   
+    with get_db() as db:
+        db.execute(f"UPDATE users SET {fields} WHERE id = ?", values)
+        updated = db.execute(                                                    
+            "SELECT id, email, date_of_birth, sex, bodyweight, training_experience_years, tracking_preset, training_goal FROM users WHERE id = ?",             
+            (current_user["id"],)                                                
+        ).fetchone()
+        return dict(updated)
