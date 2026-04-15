@@ -1,5 +1,6 @@
 from app.services.database import get_db
 from datetime import datetime, timedelta
+import random
 
 K_FATIGUE_MODIFIER = 0
 TARGET_FATIGUE_RATE = 0.75
@@ -306,6 +307,167 @@ def generate_deload_plan(db, user_id, session_id):
                 })
 
     return planned
+
+SHOCK_RECOVERY_MULTIPLIER = 1.5
+
+SHOCK_FORMATS = ["high_volume", "alternating", "pyramid", "reverse_pyramid", "drop_sets"]
+
+SHOCK_FORMAT_DESCRIPTIONS = {
+    "high_volume": "10 sets × 25-30 reps at moderate weight. Pure volume overload.",
+    "alternating": "Alternating heavy (3-5 reps) and light (15-20 reps) sets. Full rep range stimulus.",
+    "pyramid": "Ascending weight, descending reps. Start light, finish heavy.",
+    "reverse_pyramid": "Start heavy, get lighter each set. Peak intensity first.",
+    "drop_sets": "Start at near-max weight, drop 20% each set until failure.",
+}
+
+
+def _generate_sets_for_format(format_name, one_rm):
+    sets = []
+    if format_name == "high_volume":
+        w = round(one_rm * 0.40, 2)
+        for i in range(1, 11):
+            sets.append({"set_number": i, "weight_recommended": w, "reps_target_min": 25, "reps_target_max": 30})
+    elif format_name == "alternating":
+        for i in range(1, 7):
+            if i % 2 == 1:
+                sets.append({"set_number": i, "weight_recommended": round(one_rm * 0.85, 2), "reps_target_min": 3, "reps_target_max": 5})
+            else:
+                sets.append({"set_number": i, "weight_recommended": round(one_rm * 0.50, 2), "reps_target_min": 15, "reps_target_max": 20})
+    elif format_name == "pyramid":
+        for i, (pct, rmin, rmax) in enumerate([(0.60, 12, 12), (0.70, 10, 10), (0.80, 8, 8), (0.85, 6, 6), (0.90, 4, 4)], 1):
+            sets.append({"set_number": i, "weight_recommended": round(one_rm * pct, 2), "reps_target_min": rmin, "reps_target_max": rmax})
+    elif format_name == "reverse_pyramid":
+        for i, (pct, rmin, rmax) in enumerate([(0.90, 4, 5), (0.80, 6, 8), (0.70, 10, 12), (0.60, 13, 15)], 1):
+            sets.append({"set_number": i, "weight_recommended": round(one_rm * pct, 2), "reps_target_min": rmin, "reps_target_max": rmax})
+    elif format_name == "drop_sets":
+        w = round(one_rm * 0.85, 2)
+        for i in range(1, 5):
+            sets.append({"set_number": i, "weight_recommended": round(w, 2), "reps_target_min": 1, "reps_target_max": 30})
+            w = round(w * 0.80, 2)
+    return sets
+
+
+def generate_shock_plan(db, user_id):
+    preferences = db.execute(
+        """SELECT uep.exercise_id, uep.estimated_1rm,
+        e.name, e.muscle_group
+        FROM user_exercise_preferences uep
+        JOIN exercises e ON uep.exercise_id = e.id
+        WHERE uep.user_id = ?
+        ORDER BY uep.created_at DESC""",
+        (user_id,)
+    ).fetchall()
+
+    seen = set()
+    unique_prefs = []
+    for p in preferences:
+        if p["exercise_id"] not in seen:
+            seen.add(p["exercise_id"])
+            unique_prefs.append(dict(p))
+
+    if not unique_prefs:
+        return {
+            "format": None,
+            "exercises": [],
+            "message": "No exercise preferences found. Set up preferences first."
+        }
+
+    format_name = random.choice(SHOCK_FORMATS)
+    exercises = []
+
+    for pref in unique_prefs:
+        one_rm = pref["estimated_1rm"]
+        if not one_rm:
+            last_set = db.execute(
+                """SELECT s.weight_used FROM sets s
+                JOIN sessions se ON s.session_id = se.id
+                WHERE se.user_id = ? AND s.exercise_id = ? AND s.weight_used IS NOT NULL
+                ORDER BY se.session_datetime DESC LIMIT 1""",
+                (user_id, pref["exercise_id"])
+            ).fetchone()
+            if last_set:
+                one_rm = last_set["weight_used"] / 0.70
+            else:
+                continue
+
+        sets = _generate_sets_for_format(format_name, one_rm)
+        exercises.append({
+            "exercise_id": pref["exercise_id"],
+            "exercise_name": pref["name"],
+            "muscle_group": pref["muscle_group"],
+            "sets": sets
+        })
+
+    return {
+        "format": format_name,
+        "format_description": SHOCK_FORMAT_DESCRIPTIONS.get(format_name, ""),
+        "exercises": exercises
+    }
+
+
+def check_shock_suggestion(db, user_id):
+    reasons = []
+
+    rpe_row = db.execute(
+        """SELECT AVG(value) as avg_rpe FROM user_exercise_metrics
+        WHERE user_id = ? AND metric_type = 'weighted_rpe'
+        AND calculated_at >= datetime('now', '-35 days')""",
+        (user_id,)
+    ).fetchone()
+
+    if rpe_row and rpe_row["avg_rpe"] is not None and rpe_row["avg_rpe"] < 6.5:
+        reasons.append("Your RPE has been consistently low — your body may have adapted to current loads.")
+
+    recent_sets = db.execute(
+        """SELECT s.reps_completed FROM sets s
+        JOIN sessions se ON s.session_id = se.id
+        WHERE se.user_id = ? AND s.reps_completed IS NOT NULL
+        AND se.session_type = 'normal' AND se.completed_at IS NOT NULL
+        ORDER BY se.session_datetime DESC
+        LIMIT 30""",
+        (user_id,)
+    ).fetchall()
+
+    if len(recent_sets) >= 10:
+        reps = [r["reps_completed"] for r in recent_sets]
+        avg = sum(reps) / len(reps)
+        variance = sum((r - avg) ** 2 for r in reps) / len(reps)
+        if variance < 4.0:
+            reasons.append("You've been hitting the same rep range consistently — time to mix it up.")
+
+    return {"suggested": len(reasons) > 0, "reasons": reasons}
+
+
+def estimate_shock_recovery(db, user_id, session_id):
+    sets = db.execute(
+        """SELECT s.*, e.muscle_group FROM sets s
+        JOIN exercises e ON s.exercise_id = e.id
+        WHERE s.session_id = ?""",
+        (session_id,)
+    ).fetchall()
+    sets = [dict(s) for s in sets]
+
+    exercise_ids = list(dict.fromkeys(s["exercise_id"] for s in sets))
+    recovery_by_muscle = {}
+
+    for exercise_id in exercise_ids:
+        exercise_sets = [s for s in sets if s["exercise_id"] == exercise_id]
+        muscle_group = exercise_sets[0]["muscle_group"]
+
+        weighted_rpe = calculate_weighted_rpe(exercise_sets)
+        tonnage = sum((s["weight_used"] or 0) * (s["reps_completed"] or 0) for s in exercise_sets)
+        avg_tonnage = get_avg_tonnage(db, user_id, exercise_id)
+
+        base_recovery = estimate_recovery_hours(muscle_group, weighted_rpe, tonnage, avg_tonnage, bad_session=False)
+        shock_recovery = round(base_recovery * SHOCK_RECOVERY_MULTIPLIER, 1)
+
+        store_metric(db, user_id, exercise_id, "recovery_hours", shock_recovery)
+
+        if muscle_group not in recovery_by_muscle or shock_recovery > recovery_by_muscle[muscle_group]:
+            recovery_by_muscle[muscle_group] = shock_recovery
+
+    return recovery_by_muscle
+
 
 def process_session(session_id: int, user_id: int):
     with get_db() as db:

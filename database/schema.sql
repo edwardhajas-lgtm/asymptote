@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     sleep_quality INTEGER,
     notes TEXT,
     completed_at TIMESTAMP,
+    shock_screen_viewed BOOLEAN DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
