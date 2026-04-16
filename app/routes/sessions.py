@@ -341,6 +341,38 @@ def get_forecast(current_user: dict = Depends(get_current_user)):
 
         return [{"date": date, "sets": sets} for date, sets in sorted(by_date.items())]
 
+@router.patch("/planned-sets/{planned_set_id}/complete")
+def complete_planned_set(planned_set_id: int, actual_set_id: Optional[int] = None, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        planned_set = db.execute(
+            "SELECT * FROM planned_sets WHERE id = ? AND user_id = ?",
+            (planned_set_id, current_user["id"])
+        ).fetchone()
+
+        if not planned_set:
+            raise HTTPException(status_code=404, detail="Planned set not found")
+
+        if actual_set_id is not None:
+            actual_set = db.execute(
+                "SELECT id FROM sets WHERE id = ?",
+                (actual_set_id,)
+            ).fetchone()
+            if not actual_set:
+                raise HTTPException(status_code=404, detail="Actual set not found")
+
+        db.execute(
+            """UPDATE planned_sets SET completed = 1, actual_set_id = ?
+            WHERE id = ?""",
+            (actual_set_id, planned_set_id)
+        )
+
+        updated = db.execute(
+            "SELECT * FROM planned_sets WHERE id = ?",
+            (planned_set_id,)
+        ).fetchone()
+
+        return dict(updated)
+
 @router.post("/sessions/bulk")
 def bulk_create_sessions(sessions_data: List[BulkSessionCreate], current_user: dict = Depends(get_current_user)):
     with get_db() as db:
