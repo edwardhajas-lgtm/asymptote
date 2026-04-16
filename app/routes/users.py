@@ -73,6 +73,15 @@ def login(credentials: OAuth2PasswordRequestForm = Depends()):
         
         return {"access_token": token, "token_type": "bearer"}
 
+@router.get("/users/me")
+def get_user(current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        user = db.execute(
+            "SELECT id, email, date_of_birth, sex, bodyweight, training_experience_years, tracking_preset, training_goal FROM users WHERE id = ?",
+            (current_user["id"],)
+        ).fetchone()
+        return dict(user)
+
 @router.patch("/users/me")
 def update_user(user: UserUpdate, current_user: dict = Depends(get_current_user)):
     updates = {k: v for k, v in user.model_dump().items() if v is not None}

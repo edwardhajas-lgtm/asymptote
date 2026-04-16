@@ -168,6 +168,19 @@ def get_sessions(current_user: dict = Depends(get_current_user)):
 
         return [dict(s) for s in sessions]
 
+@router.get("/sessions/{session_id}")
+def get_session(session_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        session = db.execute(
+            "SELECT * FROM sessions WHERE id = ? AND user_id = ?",
+            (session_id, current_user["id"])
+        ).fetchone()
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        return dict(session)
+
 @router.get("/sessions/{session_id}/sets")
 def get_sets(session_id: int, current_user: dict = Depends(get_current_user)):
     with get_db() as db:
