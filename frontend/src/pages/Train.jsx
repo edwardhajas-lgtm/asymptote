@@ -114,7 +114,7 @@ export default function Train() {
         setShockResult(shockRes)
         setPhase(PHASES.shock)
       } else {
-        setResults(res)
+        setResults({ ...res, sessionId: session.id })
         setPhase(PHASES.done)
       }
     } catch (err) {
@@ -383,7 +383,20 @@ function ExerciseLogger({ pref, sessionId, recommendedWeight, loggedSets, onLogS
 }
 
 function SessionResults({ results, preferences, onDone }) {
+  const [deloadState, setDeloadState] = useState(null)
   const exerciseMap = Object.fromEntries(preferences.map((p) => [p.exercise_id, p.exercise_name]))
+  const anyDeload = results?.algorithm_results &&
+    Object.values(results.algorithm_results).some((r) => r.deload_recommended)
+
+  async function handleGenerateDeload() {
+    setDeloadState('loading')
+    try {
+      await api.generateDeload(results.sessionId)
+      setDeloadState('done')
+    } catch (err) {
+      setDeloadState('error:' + err.message)
+    }
+  }
 
   return (
     <div>
@@ -432,6 +445,25 @@ function SessionResults({ results, preferences, onDone }) {
           </div>
         )
       })}
+
+      {anyDeload && (
+        <div style={styles.deloadBlock}>
+          {deloadState === 'done' ? (
+            <p style={styles.deloadSuccess}>Deload plan added to your forecast</p>
+          ) : deloadState?.startsWith('error:') ? (
+            <p style={styles.error}>{deloadState.slice(6)}</p>
+          ) : (
+            <button
+              onClick={handleGenerateDeload}
+              disabled={deloadState === 'loading'}
+              style={styles.deloadBtn}
+            >
+              {deloadState === 'loading' ? 'Generating...' : 'Generate deload plan'}
+            </button>
+          )}
+        </div>
+      )}
+
       <button onClick={onDone} style={styles.primaryBtn}>Done</button>
     </div>
   )
@@ -555,4 +587,11 @@ const styles = {
   },
   quoteText: { color: '#e8e8e8', fontSize: 15, fontStyle: 'italic', lineHeight: 1.6, margin: '0 0 8px' },
   quoteAttrib: { color: '#888', fontSize: 13, margin: 0, textAlign: 'right' },
+  deloadBlock: { marginBottom: 12 },
+  deloadBtn: {
+    background: '#2a1f00', border: '1px solid #7a5500', borderRadius: 6,
+    color: '#ffaa55', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+    padding: '10px 20px', width: '100%',
+  },
+  deloadSuccess: { color: '#ffaa55', fontSize: 14, textAlign: 'center', margin: '8px 0' },
 }

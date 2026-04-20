@@ -103,8 +103,34 @@ export default function Metrics() {
 }
 
 function ExerciseMetricsDetail({ exerciseId, metrics, loading }) {
+  const [showForm, setShowForm] = useState(false)
+  const [weight, setWeight] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [formResult, setFormResult] = useState(null)
+
   if (loading) return <p style={styles.muted}>Loading...</p>
   if (!metrics) return null
+
+  async function handleLog(e) {
+    e.preventDefault()
+    const w = parseFloat(weight)
+    if (!w || w <= 0) return
+    setSubmitting(true)
+    setFormResult(null)
+    try {
+      const now = new Date().toISOString()
+      const session = await api.createSession({ session_datetime: now, session_type: '1rm_test' })
+      await api.logMeasured1rm(session.id, exerciseId, w)
+      await api.completeSession(session.id)
+      setFormResult({ ok: true, weight: w })
+      setShowForm(false)
+      setWeight('')
+    } catch (err) {
+      setFormResult({ ok: false, msg: err.message })
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const labels = {
     estimated_1rm: 'Est. 1RM',
@@ -136,6 +162,41 @@ function ExerciseMetricsDetail({ exerciseId, metrics, loading }) {
           ))}
         </div>
       ))}
+
+      {metrics['1rm_tracking_enabled'] && (
+        <div style={styles.oneRmSection}>
+          {formResult?.ok && (
+            <p style={styles.formSuccess}>Logged {formResult.weight} lbs as measured 1RM</p>
+          )}
+          {formResult && !formResult.ok && (
+            <p style={styles.formError}>{formResult.msg}</p>
+          )}
+          {!showForm ? (
+            <button style={styles.logBtn} onClick={() => { setShowForm(true); setFormResult(null) }}>
+              Log measured 1RM
+            </button>
+          ) : (
+            <form onSubmit={handleLog} style={styles.form}>
+              <input
+                type="number"
+                step="0.5"
+                min="1"
+                placeholder="Weight (lbs)"
+                value={weight}
+                onChange={e => setWeight(e.target.value)}
+                style={styles.input}
+                autoFocus
+              />
+              <button type="submit" disabled={submitting} style={styles.submitBtn}>
+                {submitting ? 'Saving...' : 'Save'}
+              </button>
+              <button type="button" style={styles.cancelBtn} onClick={() => { setShowForm(false); setWeight('') }}>
+                Cancel
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -173,4 +234,24 @@ const styles = {
   historyRow: { display: 'flex', justifyContent: 'space-between', padding: '2px 0' },
   historyDate: { color: '#666', fontSize: 12 },
   historyVal: { color: '#aaa', fontSize: 12 },
+  oneRmSection: { marginTop: 14, paddingTop: 10, borderTop: '1px solid #2a2a2a' },
+  logBtn: {
+    background: 'transparent', border: '1px solid #3a3a3a', borderRadius: 4,
+    color: '#aaa', fontSize: 13, padding: '5px 12px', cursor: 'pointer',
+  },
+  form: { display: 'flex', gap: 6, alignItems: 'center' },
+  input: {
+    background: '#0f0f0f', border: '1px solid #3a3a3a', borderRadius: 4,
+    color: '#e8e8e8', fontSize: 13, padding: '5px 8px', width: 120,
+  },
+  submitBtn: {
+    background: '#2a4a2a', border: '1px solid #3a7a3a', borderRadius: 4,
+    color: '#7cfc00', fontSize: 13, padding: '5px 12px', cursor: 'pointer',
+  },
+  cancelBtn: {
+    background: 'transparent', border: '1px solid #3a3a3a', borderRadius: 4,
+    color: '#666', fontSize: 13, padding: '5px 12px', cursor: 'pointer',
+  },
+  formSuccess: { color: '#7cfc00', fontSize: 13, margin: '0 0 8px' },
+  formError: { color: '#ff6b6b', fontSize: 13, margin: '0 0 8px' },
 }
