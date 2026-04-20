@@ -30,6 +30,10 @@ class UserUpdate(BaseModel):
     training_experience_years: Optional[int] = None
     tracking_preset: Optional[str] = None
     training_goal: Optional[str] = None
+    menstrual_tracking_enabled: Optional[bool] = None
+    data_research_consent: Optional[bool] = None
+    is_public: Optional[bool] = None
+    onboarding_complete: Optional[bool] = None
 
 @router.post("/users")
 def create_user(user: UserCreate):
@@ -77,7 +81,7 @@ def login(credentials: OAuth2PasswordRequestForm = Depends()):
 def get_user(current_user: dict = Depends(get_current_user)):
     with get_db() as db:
         user = db.execute(
-            "SELECT id, email, date_of_birth, sex, bodyweight, training_experience_years, tracking_preset, training_goal FROM users WHERE id = ?",
+            "SELECT id, email, date_of_birth, sex, bodyweight, training_experience_years, tracking_preset, training_goal, menstrual_tracking_enabled, data_research_consent, is_public, onboarding_complete FROM users WHERE id = ?",
             (current_user["id"],)
         ).fetchone()
         return dict(user)
@@ -93,7 +97,7 @@ def update_user(user: UserUpdate, current_user: dict = Depends(get_current_user)
     with get_db() as db:
         db.execute(f"UPDATE users SET {fields} WHERE id = ?", values)
         updated = db.execute(                                                    
-            "SELECT id, email, date_of_birth, sex, bodyweight, training_experience_years, tracking_preset, training_goal FROM users WHERE id = ?",             
+            "SELECT id, email, date_of_birth, sex, bodyweight, training_experience_years, tracking_preset, training_goal, menstrual_tracking_enabled, data_research_consent, is_public, onboarding_complete FROM users WHERE id = ?",             
             (current_user["id"],)                                                
         ).fetchone()
         return dict(updated)

@@ -393,10 +393,11 @@ def bulk_create_sessions(sessions_data: List[BulkSessionCreate], current_user: d
             "SELECT MAX(sequence_number) as max_seq FROM sessions WHERE user_id = ?",
             (current_user["id"],)
         ).fetchone()
-        sequence_number = (last_seq["max_seq"] or 0) + 1
+    sequence_number = (last_seq["max_seq"] or 0) + 1
 
-        created = []
-        for s in sessions_data:
+    created = []
+    for s in sessions_data:
+        with get_db() as db:
             cursor = db.execute(
                 """INSERT INTO sessions
                 (user_id, session_datetime, sequence_number, session_type,
@@ -430,6 +431,15 @@ def bulk_create_sessions(sessions_data: List[BulkSessionCreate], current_user: d
                 )
                 sets_created += 1
 
-            created.append({"id": session_id, "sequence_number": sequence_number - 1, "sets_created": sets_created})
+        algorithm_results = None
+        if s.completed_at:
+            algorithm_results = process_session(session_id, current_user["id"])
+
+        created.append({
+            "id": session_id,
+            "sequence_number": sequence_number - 1,
+            "sets_created": sets_created,
+            "algorithm_results": algorithm_results,
+        })
 
     return {"sessions_created": len(created), "sessions": created}
