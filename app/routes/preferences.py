@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app.services.database import get_db
 from app.services.auth import get_current_user
+from app.services.algorithm import generate_schedule
 
 router = APIRouter()
 
@@ -40,6 +41,8 @@ def create_preference(preference: PreferenceCreate, current_user: dict = Depends
             """SELECT * FROM user_exercise_preferences WHERE id = ?""",
             (cursor.lastrowid,)
         ).fetchone()
+
+        generate_schedule(db, current_user["id"])
 
         return dict(new_preference)
 
@@ -90,5 +93,7 @@ def update_preference(preference_id: int, body: PreferenceUpdate, current_user: 
             "SELECT * FROM user_exercise_preferences WHERE id = ?",
             (cursor.lastrowid,)
         ).fetchone()
+
+        generate_schedule(db, current_user["id"])
 
         return dict(new_pref)

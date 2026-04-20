@@ -6,6 +6,7 @@ from app.services.auth import get_current_user
 from app.services.algorithm import (
     process_session, generate_deload_plan,
     generate_shock_plan, check_shock_suggestion, estimate_shock_recovery,
+    generate_schedule,
 )
 
 router = APIRouter()
@@ -150,6 +151,9 @@ def complete_session(session_id: int, current_user: dict = Depends(get_current_u
         )
 
     results = process_session(session_id, current_user["id"])
+
+    with get_db() as db:
+        generate_schedule(db, current_user["id"])
 
     return {
         "message": "Session completed",
@@ -441,5 +445,8 @@ def bulk_create_sessions(sessions_data: List[BulkSessionCreate], current_user: d
             "sets_created": sets_created,
             "algorithm_results": algorithm_results,
         })
+
+    with get_db() as db:
+        generate_schedule(db, current_user["id"])
 
     return {"sessions_created": len(created), "sessions": created}

@@ -308,6 +308,97 @@ def generate_deload_plan(db, user_id, session_id):
 
     return planned
 
+def generate_schedule(db, user_id):
+    rows = db.execute(
+        """SELECT uep.exercise_id, uep.target_sets_per_session, uep.target_sessions_per_week,
+        e.muscle_group, e.target_rep_min, e.target_rep_max
+        FROM user_exercise_preferences uep
+        JOIN exercises e ON uep.exercise_id = e.id
+        WHERE uep.user_id = ?
+        ORDER BY uep.exercise_id, uep.created_at DESC""",
+        (user_id,)
+    ).fetchall()
+
+    seen = set()
+    prefs = []
+    for p in rows:
+        if p["exercise_id"] not in seen:
+            seen.add(p["exercise_id"])
+            prefs.append(dict(p))
+
+    if not prefs:
+        return []
+
+    days_by_muscle = {}
+    exercise_days = {}
+
+    for p in prefs:
+        mg = p["muscle_group"] or "other"
+        sessions = max(1, min(7, p["target_sessions_per_week"]))
+        claimed = days_by_muscle.get(mg, [])
+        days = []
+        for j in range(sessions):
+            candidate = round(j * 7 / sessions)
+            while candidate in claimed or candidate in days:
+                candidate = (candidate + 1) % 7
+            days.append(candidate)
+            claimed.append(candidate)
+        days_by_muscle[mg] = claimed
+        exercise_days[p["exercise_id"]] = sorted(days)
+
+    db.execute(
+        "DELETE FROM planned_sets WHERE user_id = ? AND completed = 0 AND planned_date >= date('now')",
+        (user_id,)
+    )
+
+    today = datetime.now().date()
+    start_date = today + timedelta(days=1)
+    planned = []
+
+    for p in prefs:
+        weight_row = db.execute(
+            """SELECT value FROM user_exercise_metrics
+            WHERE user_id = ? AND exercise_id = ? AND metric_type = 'weight_recommended'
+            ORDER BY calculated_at DESC LIMIT 1""",
+            (user_id, p["exercise_id"])
+        ).fetchone()
+
+        if not weight_row:
+            last_set = db.execute(
+                """SELECT s.weight_used FROM sets s
+                JOIN sessions se ON s.session_id = se.id
+                WHERE se.user_id = ? AND s.exercise_id = ? AND s.weight_used IS NOT NULL
+                ORDER BY se.session_datetime DESC LIMIT 1""",
+                (user_id, p["exercise_id"])
+            ).fetchone()
+            weight_recommended = last_set["weight_used"] if last_set else None
+        else:
+            weight_recommended = weight_row["value"]
+
+        days = exercise_days.get(p["exercise_id"], [0])
+
+        for week in range(4):
+            for day in days:
+                planned_date = start_date + timedelta(days=week * 7 + day)
+                for set_num in range(1, p["target_sets_per_session"] + 1):
+                    cursor = db.execute(
+                        """INSERT INTO planned_sets
+                        (user_id, planned_date, exercise_id, set_number,
+                        weight_recommended, reps_target_min, reps_target_max)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (user_id, planned_date.isoformat(), p["exercise_id"], set_num,
+                         weight_recommended, p["target_rep_min"], p["target_rep_max"])
+                    )
+                    planned.append({
+                        "id": cursor.lastrowid,
+                        "planned_date": planned_date.isoformat(),
+                        "exercise_id": p["exercise_id"],
+                        "set_number": set_num,
+                    })
+
+    return planned
+
+
 SHOCK_RECOVERY_MULTIPLIER = 1.5
 
 SHOCK_FORMATS = ["high_volume", "alternating", "pyramid", "reverse_pyramid", "drop_sets"]
@@ -595,6 +686,9 @@ def process_session(session_id: int, user_id: int):
                 deload_recommended = check_rpe_drift(
                     db, user_id, exercise_id, lookback_weeks
                 )
+
+            if final_weight:
+                store_metric(db, user_id, exercise_id, "weight_recommended", final_weight)
 
             muscle_group = exercise_sets[0].get("muscle_group")
             avg_tonnage = get_avg_tonnage(db, user_id, exercise_id)
