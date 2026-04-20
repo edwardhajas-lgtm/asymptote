@@ -6,7 +6,7 @@ from app.services.auth import get_current_user
 from app.services.algorithm import (
     process_session, generate_deload_plan,
     generate_shock_plan, check_shock_suggestion, estimate_shock_recovery,
-    generate_schedule,
+    generate_schedule, check_1rm_suggestion,
 )
 
 router = APIRouter()
@@ -230,6 +230,11 @@ def generate_deload(session_id: int, current_user: dict = Depends(get_current_us
 def get_shock_suggestion(current_user: dict = Depends(get_current_user)):
     with get_db() as db:
         return check_shock_suggestion(db, current_user["id"])
+
+@router.get("/sessions/1rm-suggestion")
+def get_1rm_suggestion(current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        return check_1rm_suggestion(db, current_user["id"])
 
 @router.get("/sessions/shock-plan")
 def get_shock_plan(current_user: dict = Depends(get_current_user)):

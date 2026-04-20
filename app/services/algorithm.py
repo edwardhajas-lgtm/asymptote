@@ -308,6 +308,89 @@ def generate_deload_plan(db, user_id, session_id):
 
     return planned
 
+def check_1rm_suggestion(db, user_id):
+    weeks_threshold = get_user_algorithm_setting(db, user_id, "1rm_retest_weeks", 4)
+
+    last_session = db.execute(
+        """SELECT readiness_score FROM sessions
+        WHERE user_id = ? AND completed_at IS NOT NULL
+        ORDER BY session_datetime DESC LIMIT 1""",
+        (user_id,)
+    ).fetchone()
+    readiness_ok = last_session and last_session["readiness_score"] in (None, 1)
+
+    exercise_rows = db.execute(
+        """SELECT DISTINCT exercise_id FROM user_exercise_metrics
+        WHERE user_id = ? AND metric_type = 'estimated_1rm'""",
+        (user_id,)
+    ).fetchall()
+
+    suggestions = []
+
+    for row in exercise_rows:
+        if not supports_1rm_tracking(db, user_id, row["exercise_id"]):
+            continue
+
+        exercise_id = row["exercise_id"]
+        reasons = []
+
+        current_1rm_row = db.execute(
+            """SELECT value FROM user_exercise_metrics
+            WHERE user_id = ? AND exercise_id = ? AND metric_type = 'estimated_1rm'
+            ORDER BY calculated_at DESC LIMIT 1""",
+            (user_id, exercise_id)
+        ).fetchone()
+        peak_1rm_row = db.execute(
+            """SELECT MAX(value) as peak FROM user_exercise_metrics
+            WHERE user_id = ? AND exercise_id = ? AND metric_type = 'estimated_1rm'""",
+            (user_id, exercise_id)
+        ).fetchone()
+
+        if current_1rm_row and peak_1rm_row and peak_1rm_row["peak"]:
+            if current_1rm_row["value"] >= peak_1rm_row["peak"] * 0.97:
+                reasons.append("Estimated 1RM is at or near all-time peak.")
+
+        recent_rpe_rows = db.execute(
+            """SELECT value FROM user_exercise_metrics
+            WHERE user_id = ? AND exercise_id = ? AND metric_type = 'weighted_rpe'
+            ORDER BY calculated_at DESC LIMIT 3""",
+            (user_id, exercise_id)
+        ).fetchall()
+        if len(recent_rpe_rows) >= 3:
+            avg_rpe = sum(r["value"] for r in recent_rpe_rows) / len(recent_rpe_rows)
+            if avg_rpe < 7.0:
+                reasons.append(f"RPE has been consistently low (avg {round(avg_rpe, 1)}).")
+
+        if readiness_ok:
+            reasons.append("Readiness is high going into today.")
+
+        last_measured = db.execute(
+            """SELECT calculated_at FROM user_exercise_metrics
+            WHERE user_id = ? AND exercise_id = ? AND metric_type = 'measured_1rm'
+            ORDER BY calculated_at DESC LIMIT 1""",
+            (user_id, exercise_id)
+        ).fetchone()
+        if not last_measured:
+            reasons.append("No measured 1RM on record.")
+        else:
+            weeks_since = (datetime.now() - datetime.fromisoformat(last_measured["calculated_at"])).days / 7
+            if weeks_since >= weeks_threshold:
+                reasons.append(f"{int(weeks_since)} weeks since last measured 1RM.")
+
+        if len(reasons) == 4:
+            exercise = db.execute(
+                "SELECT name FROM exercises WHERE id = ?", (exercise_id,)
+            ).fetchone()
+            suggestions.append({
+                "exercise_id": exercise_id,
+                "exercise_name": exercise["name"] if exercise else None,
+                "suggested": True,
+                "reasons": reasons,
+            })
+
+    return {"suggestions": suggestions}
+
+
 def generate_schedule(db, user_id):
     rows = db.execute(
         """SELECT uep.exercise_id, uep.target_sets_per_session, uep.target_sessions_per_week,
