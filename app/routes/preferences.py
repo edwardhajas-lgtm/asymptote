@@ -64,25 +64,31 @@ def update_preference(preference_id: int, body: PreferenceUpdate, current_user: 
         raise HTTPException(status_code=400, detail="No fields provided")
 
     with get_db() as db:
-        pref = db.execute(
-            "SELECT id FROM user_exercise_preferences WHERE id = ? AND user_id = ?",
+        existing = db.execute(
+            "SELECT * FROM user_exercise_preferences WHERE id = ? AND user_id = ?",
             (preference_id, current_user["id"])
         ).fetchone()
 
-        if not pref:
+        if not existing:
             raise HTTPException(status_code=404, detail="Preference not found")
 
-        fields = ", ".join(f"{k} = ?" for k in updates)
-        values = list(updates.values()) + [preference_id]
+        merged = {
+            "target_sets_per_session": updates.get("target_sets_per_session", existing["target_sets_per_session"]),
+            "target_sessions_per_week": updates.get("target_sessions_per_week", existing["target_sessions_per_week"]),
+            "estimated_1rm": updates.get("estimated_1rm", existing["estimated_1rm"]),
+        }
 
-        db.execute(
-            f"UPDATE user_exercise_preferences SET {fields}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            values
+        cursor = db.execute(
+            """INSERT INTO user_exercise_preferences
+            (user_id, exercise_id, target_sets_per_session, target_sessions_per_week, estimated_1rm)
+            VALUES (?, ?, ?, ?, ?)""",
+            (current_user["id"], existing["exercise_id"],
+             merged["target_sets_per_session"], merged["target_sessions_per_week"], merged["estimated_1rm"])
         )
 
-        updated = db.execute(
+        new_pref = db.execute(
             "SELECT * FROM user_exercise_preferences WHERE id = ?",
-            (preference_id,)
+            (cursor.lastrowid,)
         ).fetchone()
 
-        return dict(updated)
+        return dict(new_pref)
