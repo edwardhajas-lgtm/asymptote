@@ -48,7 +48,7 @@ export const api = {
   updateMe: (body) => request('PATCH', '/users/me', body),
 
   getExercises: () => request('GET', '/exercises'),
-  toggle1rmTracking: (exerciseId) => request('PATCH', `/exercises/${exerciseId}/1rm-tracking`),
+  toggle1rmTracking: (exerciseId, enabled) => request('PATCH', `/exercises/${exerciseId}/1rm-tracking`, { enabled }),
 
   getPreferences: () => request('GET', '/preferences'),
   createPreference: (body) => request('POST', '/preferences', body),

@@ -107,9 +107,27 @@ function ExerciseMetricsDetail({ exerciseId, metrics, loading }) {
   const [weight, setWeight] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [formResult, setFormResult] = useState(null)
+  const [tracking, setTracking] = useState(null)
+  const [trackingBusy, setTrackingBusy] = useState(false)
+
+  useEffect(() => {
+    if (metrics) setTracking(metrics['1rm_tracking_enabled'])
+  }, [metrics])
 
   if (loading) return <p style={styles.muted}>Loading...</p>
   if (!metrics) return null
+
+  async function handleToggleTracking() {
+    setTrackingBusy(true)
+    try {
+      const res = await api.toggle1rmTracking(exerciseId, !tracking)
+      setTracking(res.enabled)
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setTrackingBusy(false)
+    }
+  }
 
   async function handleLog(e) {
     e.preventDefault()
@@ -143,7 +161,13 @@ function ExerciseMetricsDetail({ exerciseId, metrics, loading }) {
     <div style={styles.detailBlock}>
       <div style={styles.detailRow}>
         <span style={styles.detailLabel}>1RM tracking</span>
-        <span style={styles.detailVal}>{metrics['1rm_tracking_enabled'] ? 'Enabled' : 'Disabled'}</span>
+        <button
+          onClick={handleToggleTracking}
+          disabled={trackingBusy}
+          style={{ ...styles.trackingBtn, ...(tracking ? styles.trackingBtnOn : styles.trackingBtnOff) }}
+        >
+          {trackingBusy ? '...' : tracking ? 'Enabled' : 'Disabled'}
+        </button>
       </div>
       {Object.entries(metrics.latest || {}).map(([key, val]) => (
         <div key={key} style={styles.detailRow}>
@@ -163,7 +187,7 @@ function ExerciseMetricsDetail({ exerciseId, metrics, loading }) {
         </div>
       ))}
 
-      {metrics['1rm_tracking_enabled'] && (
+      {tracking && (
         <div style={styles.oneRmSection}>
           {formResult?.ok && (
             <p style={styles.formSuccess}>Logged {formResult.weight} lbs as measured 1RM</p>
@@ -234,6 +258,12 @@ const styles = {
   historyRow: { display: 'flex', justifyContent: 'space-between', padding: '2px 0' },
   historyDate: { color: '#666', fontSize: 12 },
   historyVal: { color: '#aaa', fontSize: 12 },
+  trackingBtn: {
+    border: '1px solid', borderRadius: 4, cursor: 'pointer',
+    fontSize: 12, padding: '2px 8px', fontWeight: 600,
+  },
+  trackingBtnOn: { background: '#1a2a1a', borderColor: '#3a7a3a', color: '#7cfc00' },
+  trackingBtnOff: { background: '#1a1a1a', borderColor: '#3a3a3a', color: '#555' },
   oneRmSection: { marginTop: 14, paddingTop: 10, borderTop: '1px solid #2a2a2a' },
   logBtn: {
     background: 'transparent', border: '1px solid #3a3a3a', borderRadius: 4,
