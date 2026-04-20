@@ -321,7 +321,7 @@ def log_measured_1rm(session_id: int, body: MeasuredOnerm, current_user: dict = 
         )
 
         pref = db.execute(
-            """SELECT id, estimated_1rm FROM user_exercise_preferences
+            """SELECT * FROM user_exercise_preferences
             WHERE user_id = ? AND exercise_id = ?
             ORDER BY created_at DESC LIMIT 1""",
             (current_user["id"], body.exercise_id)
@@ -329,10 +329,11 @@ def log_measured_1rm(session_id: int, body: MeasuredOnerm, current_user: dict = 
 
         if pref and (not pref["estimated_1rm"] or body.weight > pref["estimated_1rm"]):
             db.execute(
-                """UPDATE user_exercise_preferences
-                SET estimated_1rm = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?""",
-                (body.weight, pref["id"])
+                """INSERT INTO user_exercise_preferences
+                (user_id, exercise_id, target_sets_per_session, target_sessions_per_week, estimated_1rm)
+                VALUES (?, ?, ?, ?, ?)""",
+                (current_user["id"], body.exercise_id,
+                 pref["target_sets_per_session"], pref["target_sessions_per_week"], body.weight)
             )
 
     return {

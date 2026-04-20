@@ -128,16 +128,13 @@ def check_bad_session(session):
 
 def check_rpe_drift(db, user_id, exercise_id, lookback_weeks=5, threshold=0.5):
     rows = db.execute(
-        """SELECT AVG(m.value) as avg_rpe,
-        strftime("%Y-%W", se.session_datetime) as week
-        FROM user_exercise_metrics m
-        JOIN sets s ON m.exercise_id = s.exercise_id AND m.user_id = se.user_id
-        JOIN sessions se ON s.session_id = se.id
-        WHERE m.user_id = ?
-        AND m.exercise_id = ?
-        AND m.metric_type = "weighted_rpe"
-        AND se.session_datetime >= datetime("now", ? || " days")
-        AND se.session_type = "normal"
+        """SELECT AVG(value) as avg_rpe,
+        strftime('%Y-%W', calculated_at) as week
+        FROM user_exercise_metrics
+        WHERE user_id = ?
+        AND exercise_id = ?
+        AND metric_type = 'weighted_rpe'
+        AND calculated_at >= datetime('now', ? || ' days')
         GROUP BY week
         ORDER BY week ASC""",
         (user_id, exercise_id, -(lookback_weeks * 7))
