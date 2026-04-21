@@ -65,6 +65,23 @@ export default function Setup() {
     }
   }
 
+  async function handleRemove(exerciseId) {
+    setBusy(exerciseId)
+    try {
+      await api.deletePreference(exerciseId)
+      setPreferences((prev) => prev.filter((p) => p.exercise_id !== exerciseId))
+      setOrder((prev) => {
+        const updated = prev.filter((id) => id !== exerciseId)
+        saveOrder(updated)
+        return updated
+      })
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   async function handleUpdate(exerciseId, sets, sessionsPerWeek, estimated1rm) {
     const pref = prefFor(exerciseId)
     if (!pref) return
@@ -137,6 +154,7 @@ export default function Setup() {
               pref={prefFor(ex.id)}
               busy={busy === ex.id}
               onUpdate={handleUpdate}
+              onRemove={handleRemove}
               onDragStart={onDragStart}
               onDragOver={onDragOver}
               onDragEnd={onDragEnd}
@@ -169,7 +187,7 @@ export default function Setup() {
   )
 }
 
-function SelectedRow({ exercise, pref, busy, onUpdate, onDragStart, onDragOver, onDragEnd }) {
+function SelectedRow({ exercise, pref, busy, onUpdate, onRemove, onDragStart, onDragOver, onDragEnd }) {
   const [sets, setSets] = useState(pref?.target_sets_per_session ?? 3)
   const [sessionsPerWeek, setSessionsPerWeek] = useState(pref?.target_sessions_per_week ?? 2)
   const [estimated1rm, setEstimated1rm] = useState(pref?.estimated_1rm ?? '')
@@ -214,6 +232,7 @@ function SelectedRow({ exercise, pref, busy, onUpdate, onDragStart, onDragOver, 
           {busy ? '...' : 'save'}
         </button>
       )}
+      <button onClick={() => onRemove(exercise.id)} disabled={busy} style={styles.removeBtn}>×</button>
     </div>
   )
 }

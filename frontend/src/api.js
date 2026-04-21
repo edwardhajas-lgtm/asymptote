@@ -54,6 +54,7 @@ export const api = {
   getPreferences: () => request('GET', '/preferences'),
   createPreference: (body) => request('POST', '/preferences', body),
   updatePreference: (id, body) => request('PATCH', `/preferences/${id}`, body),
+  deletePreference: (exerciseId) => request('DELETE', `/preferences/${exerciseId}`),
 
   createSession: (body) => request('POST', '/sessions', body),
   getSessions: () => request('GET', '/sessions'),

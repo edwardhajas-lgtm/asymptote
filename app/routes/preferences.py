@@ -97,3 +97,15 @@ def update_preference(preference_id: int, body: PreferenceUpdate, current_user: 
         generate_schedule(db, current_user["id"])
 
         return dict(new_pref)
+
+@router.delete("/preferences/{exercise_id}")
+def delete_preference(exercise_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        result = db.execute(
+            "DELETE FROM user_exercise_preferences WHERE user_id = ? AND exercise_id = ?",
+            (current_user["id"], exercise_id)
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Preference not found")
+        generate_schedule(db, current_user["id"])
+    return {"deleted": True}
