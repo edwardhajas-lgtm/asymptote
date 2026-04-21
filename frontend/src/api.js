@@ -69,6 +69,7 @@ export const api = {
   get1rmSuggestion: () => request('GET', '/sessions/1rm-suggestion'),
 
   logSet: (sessionId, body) => request('POST', `/sessions/${sessionId}/sets`, body),
+  bulkImport: (sessions) => request('POST', '/sessions/bulk', sessions),
 
   getForecast: () => request('GET', '/forecast'),
   completePlannedSet: (id, actualSetId) =>

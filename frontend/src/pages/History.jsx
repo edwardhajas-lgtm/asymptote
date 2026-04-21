@@ -50,6 +50,10 @@ export default function History() {
     byMonth[month].push(s)
   }
 
+  function onImported() {
+    api.getSessions().then(setSessions).catch(() => null)
+  }
+
   return (
     <div>
       <h2 style={styles.heading}>History</h2>
@@ -82,6 +86,7 @@ export default function History() {
           ))}
         </div>
       ))}
+      <BulkImport onImported={onImported} />
     </div>
   )
 }
@@ -128,6 +133,92 @@ function SessionDetail({ session, sets, exMap }) {
   )
 }
 
+const EXAMPLE_JSON = `[
+  {
+    "session_datetime": "2024-01-15 10:00:00",
+    "session_type": "normal",
+    "notes": "Felt strong",
+    "sets": [
+      {
+        "exercise_id": 1,
+        "set_number": 1,
+        "weight_used": 135,
+        "reps_completed": 10,
+        "rpe": 7
+      }
+    ]
+  }
+]`
+
+function BulkImport({ onImported }) {
+  const [open, setOpen] = useState(false)
+  const [showExample, setShowExample] = useState(false)
+  const [json, setJson] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState(null)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setResult(null)
+    let parsed
+    try {
+      parsed = JSON.parse(json)
+    } catch {
+      setResult({ ok: false, msg: 'Invalid JSON' })
+      return
+    }
+    if (!Array.isArray(parsed)) {
+      setResult({ ok: false, msg: 'Expected a JSON array of sessions' })
+      return
+    }
+    setSubmitting(true)
+    try {
+      const res = await api.bulkImport(parsed)
+      onImported(res.sessions_created)
+      setResult({ ok: true, count: res.sessions_created })
+      setJson('')
+      setOpen(false)
+    } catch (err) {
+      setResult({ ok: false, msg: err.message })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div style={styles.importBlock}>
+      <button style={styles.importToggle} onClick={() => { setOpen((o) => !o); setResult(null) }}>
+        {open ? '▾' : '▸'} Import sessions
+      </button>
+      {result?.ok && (
+        <p style={styles.importSuccess}>Imported {result.count} session{result.count !== 1 ? 's' : ''}</p>
+      )}
+      {open && (
+        <div style={styles.importForm}>
+          <button style={styles.exampleToggle} onClick={() => setShowExample((o) => !o)}>
+            {showExample ? 'Hide' : 'Show'} format example
+          </button>
+          {showExample && (
+            <pre style={styles.examplePre}>{EXAMPLE_JSON}</pre>
+          )}
+          <form onSubmit={handleSubmit}>
+            <textarea
+              placeholder="Paste JSON array of sessions here"
+              value={json}
+              onChange={(e) => setJson(e.target.value)}
+              style={styles.importTextarea}
+            />
+            {result && !result.ok && <p style={styles.importError}>{result.msg}</p>}
+            <button type="submit" disabled={submitting || !json.trim()} style={styles.importBtn}>
+              {submitting ? 'Importing...' : 'Import'}
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function formatMonth(str) {
   const [y, m] = str.split('-')
   return new Date(parseInt(y), parseInt(m) - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -165,4 +256,31 @@ const styles = {
   exBlock: { marginBottom: 10 },
   exName: { fontWeight: 600, fontSize: 13, marginBottom: 4 },
   setRow: { color: '#aaa', fontSize: 13, padding: '2px 0' },
+  importBlock: { marginTop: 24 },
+  importToggle: {
+    background: 'none', border: 'none', color: '#888', cursor: 'pointer',
+    fontSize: 13, padding: 0, marginBottom: 8,
+  },
+  importSuccess: { color: '#5a9a5a', fontSize: 13, margin: '4px 0' },
+  importForm: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, padding: 12 },
+  exampleToggle: {
+    background: 'none', border: 'none', color: '#666', cursor: 'pointer',
+    fontSize: 12, padding: 0, marginBottom: 8,
+  },
+  examplePre: {
+    background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 4,
+    color: '#888', fontSize: 11, padding: 10, overflowX: 'auto',
+    marginBottom: 10, whiteSpace: 'pre-wrap',
+  },
+  importTextarea: {
+    background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 4,
+    color: '#e8e8e8', fontSize: 13, padding: '8px 10px', width: '100%',
+    boxSizing: 'border-box', resize: 'vertical', minHeight: 120, marginBottom: 8,
+  },
+  importError: { color: '#ff6b6b', fontSize: 13, margin: '0 0 8px' },
+  importBtn: {
+    background: '#e8e8e8', border: 'none', borderRadius: 6,
+    color: '#0f0f0f', cursor: 'pointer', fontSize: 14,
+    fontWeight: 600, padding: '8px 16px',
+  },
 }
