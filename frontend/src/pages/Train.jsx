@@ -26,6 +26,7 @@ export default function Train() {
   const [session, setSession] = useState(null)
   const [sessionType, setSessionType] = useState('normal')
   const [wellness, setWellness] = useState({ readiness_score: null, stress_level: null, sleep_hours: '', sleep_quality: null })
+  const [notes, setNotes] = useState('')
   const [loggedSets, setLoggedSets] = useState([])
   const [results, setResults] = useState(null)
   const [shockResult, setShockResult] = useState(null)
@@ -73,6 +74,7 @@ export default function Train() {
         stress_level: wellness.stress_level || null,
         sleep_hours: wellness.sleep_hours ? parseFloat(wellness.sleep_hours) : null,
         sleep_quality: wellness.sleep_quality || null,
+        notes: notes.trim() || null,
       }
       const s = await api.createSession(body)
       setSession(s)
@@ -131,6 +133,7 @@ export default function Train() {
     setShockResult(null)
     setSessionType('normal')
     setWellness({ readiness_score: null, stress_level: null, sleep_hours: '', sleep_quality: null })
+    setNotes('')
     setLoggedSets([])
     api.getShockSuggestion().then(setShockSuggestion).catch(() => null)
     api.getForecast().then(setForecast).catch(() => null)
@@ -201,6 +204,13 @@ export default function Train() {
       </div>
 
       <WellnessInputs wellness={wellness} onChange={setWellness} />
+
+      <textarea
+        placeholder="Session notes (optional)"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        style={styles.notesInput}
+      />
 
       {preferences.length === 0 && (
         <p style={styles.muted}>No exercises set up yet. Go to Setup to add some.</p>
@@ -540,6 +550,12 @@ const styles = {
     color: '#888', cursor: 'pointer', fontSize: 12, padding: '3px 8px',
   },
   wellnessBtnActive: { background: '#2a2a2a', color: '#e8e8e8', borderColor: '#4a4a4a' },
+  notesInput: {
+    background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 6,
+    color: '#e8e8e8', fontSize: 13, padding: '8px 10px', width: '100%',
+    boxSizing: 'border-box', resize: 'vertical', minHeight: 60,
+    marginBottom: 12,
+  },
   suggestionBanner: {
     background: '#1a2a1a', border: '1px solid #3a5a3a', borderRadius: 8,
     padding: 12, marginBottom: 16,
