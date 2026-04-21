@@ -163,6 +163,8 @@ export default function Setup() {
           ))}
         </div>
       )}
+
+      <CreateExerciseForm onCreated={(ex) => setExercises((prev) => [...prev, ex])} />
     </div>
   )
 }
@@ -234,6 +236,87 @@ function UnselectedRow({ exercise, busy, onCheck }) {
   )
 }
 
+const MUSCLE_GROUPS = ['legs', 'back', 'chest', 'shoulders', 'arms', 'core']
+
+function CreateExerciseForm({ onCreated }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [repMin, setRepMin] = useState(6)
+  const [repMax, setRepMax] = useState(12)
+  const [muscleGroup, setMuscleGroup] = useState('chest')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!name.trim()) return
+    setSaving(true)
+    setError(null)
+    try {
+      const ex = await api.createExercise({
+        name: name.trim(),
+        target_rep_min: repMin,
+        target_rep_max: repMax,
+        muscle_group: muscleGroup,
+      })
+      onCreated({ ...ex, target_rep_min: repMin, target_rep_max: repMax, muscle_group: muscleGroup })
+      setName('')
+      setRepMin(6)
+      setRepMax(12)
+      setMuscleGroup('chest')
+      setOpen(false)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={styles.createBlock}>
+      <button style={styles.createToggle} onClick={() => { setOpen((o) => !o); setError(null) }}>
+        {open ? '▾' : '▸'} Create custom exercise
+      </button>
+      {open && (
+        <form onSubmit={handleSubmit} style={styles.createForm}>
+          <input
+            placeholder="Exercise name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            style={styles.createInput}
+            autoFocus
+          />
+          <div style={styles.createRow}>
+            <label style={styles.label}>
+              Min reps
+              <input type="number" min={1} max={30} value={repMin}
+                onChange={(e) => setRepMin(Number(e.target.value))}
+                style={styles.numInput} />
+            </label>
+            <label style={styles.label}>
+              Max reps
+              <input type="number" min={1} max={30} value={repMax}
+                onChange={(e) => setRepMax(Number(e.target.value))}
+                style={styles.numInput} />
+            </label>
+            <label style={styles.label}>
+              Muscle group
+              <select value={muscleGroup} onChange={(e) => setMuscleGroup(e.target.value)}
+                style={styles.createSelect}>
+                {MUSCLE_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </label>
+          </div>
+          {error && <p style={styles.error}>{error}</p>}
+          <button type="submit" disabled={saving || !name.trim()} style={styles.saveBtn}>
+            {saving ? 'Creating...' : 'Create exercise'}
+          </button>
+        </form>
+      )}
+    </div>
+  )
+}
+
 const styles = {
   heading: { fontSize: 20, fontWeight: 700, marginBottom: 16 },
   muted: { color: '#888', fontSize: 14 },
@@ -291,4 +374,21 @@ const styles = {
     borderBottom: '1px solid #1a1a1a',
   },
   checkLabel: { display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 },
+  createBlock: { marginTop: 24 },
+  createToggle: {
+    background: 'none', border: 'none', color: '#888', cursor: 'pointer',
+    fontSize: 13, padding: 0, marginBottom: 8,
+  },
+  createForm: { background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, padding: 12 },
+  createInput: {
+    background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 4,
+    color: '#e8e8e8', fontSize: 14, padding: '6px 8px', width: '100%',
+    boxSizing: 'border-box', marginBottom: 10,
+  },
+  createRow: { display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10 },
+  createSelect: {
+    background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 4,
+    color: '#e8e8e8', fontSize: 13, padding: '2px 4px',
+  },
+  error: { color: '#ff6b6b', fontSize: 13, margin: '0 0 8px' },
 }
