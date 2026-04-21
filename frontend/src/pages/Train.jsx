@@ -30,6 +30,7 @@ export default function Train() {
   const [loggedSets, setLoggedSets] = useState([])
   const [results, setResults] = useState(null)
   const [shockResult, setShockResult] = useState(null)
+  const [shockPlan, setShockPlan] = useState(null)
   const [shockSuggestion, setShockSuggestion] = useState(null)
   const [forecast, setForecast] = useState([])
   const [loading, setLoading] = useState(false)
@@ -79,6 +80,9 @@ export default function Train() {
       const s = await api.createSession(body)
       setSession(s)
       setLoggedSets([])
+      if (sessionType === 'shock') {
+        api.getShockPlan().then(setShockPlan).catch(() => null)
+      }
       setPhase(PHASES.active)
     } catch (err) {
       setError(err.message)
@@ -131,6 +135,7 @@ export default function Train() {
     setSession(null)
     setResults(null)
     setShockResult(null)
+    setShockPlan(null)
     setSessionType('normal')
     setWellness({ readiness_score: null, stress_level: null, sleep_hours: '', sleep_quality: null })
     setNotes('')
@@ -161,7 +166,7 @@ export default function Train() {
         </div>
         {error && <p style={styles.error}>{error}</p>}
         {sessionType === 'shock' && (
-          <p style={styles.shockHint}>Log whatever feels right. No targets — just go.</p>
+          <ShockPlanGuide plan={shockPlan} />
         )}
         {preferences.map((pref) => (
           <ExerciseLogger
@@ -479,6 +484,42 @@ function SessionResults({ results, preferences, onDone }) {
   )
 }
 
+function ShockPlanGuide({ plan }) {
+  const [open, setOpen] = useState(false)
+
+  if (!plan) return <p style={styles.shockHint}>Log whatever feels right. No targets — just go.</p>
+  if (!plan.exercises?.length) return <p style={styles.shockHint}>{plan.message || 'No plan available.'}</p>
+
+  return (
+    <div style={styles.shockPlanBlock}>
+      <button style={styles.shockPlanToggle} onClick={() => setOpen((o) => !o)}>
+        {open ? '▾' : '▸'} Today's plan: <strong>{plan.format?.replace(/_/g, ' ')}</strong>
+      </button>
+      {!open && <p style={styles.shockHint}>{plan.format_description}</p>}
+      {open && (
+        <div>
+          <p style={styles.shockHint}>{plan.format_description}</p>
+          {plan.exercises.map((ex) => (
+            <div key={ex.exercise_id} style={styles.shockPlanEx}>
+              <div style={styles.shockPlanExName}>{ex.exercise_name}</div>
+              {ex.sets.map((s) => (
+                <div key={s.set_number} style={styles.shockPlanSet}>
+                  <span style={styles.shockPlanSetNum}>Set {s.set_number}</span>
+                  <span style={styles.shockPlanSetDetail}>
+                    {s.weight_recommended} lbs · {s.reps_target_min === s.reps_target_max
+                      ? `${s.reps_target_min} reps`
+                      : `${s.reps_target_min}–${s.reps_target_max} reps`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ShockResults({ result, loggedSets, onDone }) {
   return (
     <div>
@@ -556,6 +597,19 @@ const styles = {
     boxSizing: 'border-box', resize: 'vertical', minHeight: 60,
     marginBottom: 12,
   },
+  shockPlanBlock: { marginBottom: 12 },
+  shockPlanToggle: {
+    background: 'none', border: 'none', color: '#aaa', cursor: 'pointer',
+    fontSize: 13, padding: 0, marginBottom: 4, textAlign: 'left',
+  },
+  shockPlanEx: {
+    background: '#1a1a2a', border: '1px solid #2a2a4a', borderRadius: 6,
+    padding: '8px 10px', marginBottom: 6,
+  },
+  shockPlanExName: { fontWeight: 600, fontSize: 13, marginBottom: 6 },
+  shockPlanSet: { display: 'flex', justifyContent: 'space-between', padding: '2px 0' },
+  shockPlanSetNum: { color: '#666', fontSize: 12 },
+  shockPlanSetDetail: { color: '#aaa', fontSize: 12 },
   suggestionBanner: {
     background: '#1a2a1a', border: '1px solid #3a5a3a', borderRadius: 8,
     padding: 12, marginBottom: 16,
