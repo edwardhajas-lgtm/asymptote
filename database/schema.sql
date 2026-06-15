@@ -43,26 +43,9 @@ CREATE TABLE IF NOT EXISTS user_exercise_preferences (
     FOREIGN KEY (exercise_id) REFERENCES exercises(id)
 );
 
-CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    session_datetime TIMESTAMP NOT NULL,
-    sequence_number INTEGER NOT NULL,
-    session_type TEXT DEFAULT 'normal',
-    readiness_score INTEGER,
-    stress_level INTEGER,
-    sleep_hours REAL,
-    sleep_quality INTEGER,
-    notes TEXT,
-    completed_at TIMESTAMP,
-    shock_screen_viewed BOOLEAN DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
 CREATE TABLE IF NOT EXISTS sets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
     exercise_id INTEGER NOT NULL,
     set_number INTEGER NOT NULL,
     weight_recommended REAL,
@@ -75,15 +58,15 @@ CREATE TABLE IF NOT EXISTS sets (
     fatigue_index REAL,
     failed_reps INTEGER DEFAULT 0,
     pain_flag BOOLEAN DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES sessions(id),
+    logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (exercise_id) REFERENCES exercises(id)
 );
 
 CREATE TABLE IF NOT EXISTS planned_sets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
-    planned_date DATE,
+    planned_order INTEGER NOT NULL,
     exercise_id INTEGER NOT NULL,
     set_number INTEGER NOT NULL,
     weight_recommended REAL,
@@ -91,6 +74,7 @@ CREATE TABLE IF NOT EXISTS planned_sets (
     reps_target_max INTEGER NOT NULL,
     generated_from_set_id INTEGER,
     completed BOOLEAN DEFAULT 0,
+    skipped BOOLEAN DEFAULT 0,
     actual_set_id INTEGER,
     generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
