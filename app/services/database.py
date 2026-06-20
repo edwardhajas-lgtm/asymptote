@@ -7,10 +7,10 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
-        yield conn 
-        conn.commit()
+        yield conn #hand connection to endpoint
+        conn.commit() #when it comes back it means everything worked so it commits the change
     except:
-        conn.rollback()
+        conn.rollback()#if something in the endpoint goes wrong it rolls back the changes so a partial change isnt saved
         raise
     finally:
-        conn.close()
+        conn.close()#always close connection to free up resources
