@@ -29,3 +29,9 @@ def create_preference(preference: PreferenceCreate, current_user: dict = Depends
             (preference.exercise_id, preference.target_rep_min, preference.target_rep_max, preference.target_sets_per_session, preference.target_sessions_per_week, preference.estimated_1rm, current_user["id"])
         )
         return {"id": cursor.lastrowid, "name": preference.exercise_id, "message": "Exercise preference updated successfully"}
+    
+@router.get("/preferences")
+def get_preferences(current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        preferences = db.execute("SELECT * FROM user_exercise_preferences WHERE user_id = ?", (current_user["id"],)).fetchall()
+        return [dict(row) for row in preferences] 
