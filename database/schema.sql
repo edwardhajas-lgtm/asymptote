@@ -19,8 +19,6 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS exercises (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    target_rep_min INTEGER NOT NULL,
-    target_rep_max INTEGER NOT NULL,
     muscle_group TEXT NOT NULL,
     exercise_type TEXT DEFAULT 'weighted',
     supports_1rm BOOLEAN DEFAULT 0,
@@ -34,6 +32,8 @@ CREATE TABLE IF NOT EXISTS user_exercise_preferences (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     exercise_id INTEGER NOT NULL,
+    target_rep_min INTEGER NOT NULL,
+    target_rep_max INTEGER NOT NULL,
     target_sets_per_session INTEGER NOT NULL DEFAULT 3,
     target_sessions_per_week INTEGER NOT NULL DEFAULT 1,
     estimated_1rm REAL,

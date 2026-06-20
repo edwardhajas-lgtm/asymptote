@@ -7,8 +7,6 @@ router = APIRouter()
 
 class ExerciseCreate(BaseModel):
     name: str
-    target_rep_min: int
-    target_rep_max: int
     muscle_group: str
 
 @router.get("/exercises")
@@ -27,8 +25,8 @@ def create_exercise(exercise: ExerciseCreate, current_user: dict = Depends(get_c
         if existing:
             raise HTTPException(status_code=400, detail="Exercise already exists")
         cursor = db.execute(
-            """INSERT INTO exercises (name, target_rep_min, target_rep_max, muscle_group, exercise_type, supports_1rm, created_by_user_id, is_verified) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (exercise.name, exercise.target_rep_min, exercise.target_rep_max, exercise.muscle_group, "weighted", 0, current_user["id"], 0)
+            """INSERT INTO exercises (name, muscle_group, exercise_type, supports_1rm, created_by_user_id, is_verified) 
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (exercise.name, exercise.muscle_group, "weighted", 0, current_user["id"], 0)
         )
         return {"id": cursor.lastrowid, "name": exercise.name, "message": "Exercise created successfully"}
