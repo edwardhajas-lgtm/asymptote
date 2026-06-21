@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.services.database import get_db
 from pydantic import BaseModel
 from app.services.auth import get_current_user
+from app.services.algorithm import calculate_weight_recommendation
 from typing import Optional
 
 router = APIRouter()
@@ -36,4 +37,13 @@ def create_set(set_data: SetCreate, current_user: dict = Depends(get_current_use
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (current_user["id"], set_data.exercise_id, set_data.set_number, set_data.weight_used, preference["target_rep_min"], preference["target_rep_max"], set_data.reps_completed, set_data.rpe)
         )
-        return {"id": cursor.lastrowid, "exercise_id": set_data.exercise_id, "message": "Set logged successfully"}
+        new_weight = calculate_weight_recommendation(
+            db,
+            current_user["id"],
+            set_data.exercise_id,
+            set_data.weight_used,
+            set_data.reps_completed,
+            preference["target_rep_min"],
+            preference["target_rep_max"]
+        )
+        return {"id": cursor.lastrowid, "exercise_id": set_data.exercise_id, "weight_recommended_next": new_weight, "message": "Set logged successfully"}
