@@ -13,6 +13,7 @@ class SetCreate(BaseModel):
     weight_used: float
     reps_completed: int
     rpe: Optional[int] = None
+    planned_set_id: Optional[int] = None
 
 @router.post("/sets")
 def create_set(set_data: SetCreate, current_user: dict = Depends(get_current_user)):
@@ -33,9 +34,9 @@ def create_set(set_data: SetCreate, current_user: dict = Depends(get_current_use
         if not preference:
             raise HTTPException(status_code=400, detail="preferences must be set before logging a set")
         cursor = db.execute(
-            """INSERT INTO sets (user_id, exercise_id, set_number, weight_used, reps_target_min, reps_target_max, reps_completed, rpe) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (current_user["id"], set_data.exercise_id, set_data.set_number, set_data.weight_used, preference["target_rep_min"], preference["target_rep_max"], set_data.reps_completed, set_data.rpe)
+            """INSERT INTO sets (user_id, exercise_id, set_number, weight_used, reps_target_min, reps_target_max, reps_completed, rpe, planned_set_id) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (current_user["id"], set_data.exercise_id, set_data.set_number, set_data.weight_used, preference["target_rep_min"], preference["target_rep_max"], set_data.reps_completed, set_data.rpe, set_data.planned_set_id)
         )
         new_weight = calculate_weight_recommendation(
             db,

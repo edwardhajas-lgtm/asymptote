@@ -58,9 +58,11 @@ CREATE TABLE IF NOT EXISTS sets (
     fatigue_index REAL,
     failed_reps INTEGER DEFAULT 0,
     pain_flag BOOLEAN DEFAULT 0,
+    planned_set_id INTEGER,
     logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (exercise_id) REFERENCES exercises(id)
+    FOREIGN KEY (exercise_id) REFERENCES exercises(id),
+    FOREIGN KEY (planned_set_id) REFERENCES planned_sets(id)
 );
 
 CREATE TABLE IF NOT EXISTS planned_sets (
