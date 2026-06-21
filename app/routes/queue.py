@@ -35,3 +35,28 @@ def complete_queue_item(planned_set_id: int, current_user: dict = Depends(get_cu
         generate_queue(db, current_user["id"])
 
         return {"message": "Queue entry marked complete"}
+
+@router.patch("/queue/{planned_set_id}/push")
+def push_queue_item(planned_set_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        planned_set = db.execute(
+            "SELECT id FROM planned_sets WHERE id = ? AND user_id = ?",
+            (planned_set_id, current_user["id"])
+        ).fetchone()
+
+        if not planned_set:
+            raise HTTPException(status_code=404, detail="Queue entry not found")
+
+        highest = db.execute(
+            "SELECT MAX(planned_order) as max_order FROM planned_sets WHERE user_id = ? AND completed = 0",
+            (current_user["id"],)
+        ).fetchone()
+
+        new_order = highest["max_order"] + 1
+
+        db.execute(
+            "UPDATE planned_sets SET planned_order = ? WHERE id = ?",
+            (new_order, planned_set_id)
+        )
+
+        return {"message": "Queue entry pushed to back"}
