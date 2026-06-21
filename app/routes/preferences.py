@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.services.database import get_db
 from pydantic import BaseModel
 from app.services.auth import get_current_user
+from app.services.queue import generate_queue
 from typing import Optional
 
 router = APIRouter()
@@ -28,6 +29,7 @@ def create_preference(preference: PreferenceCreate, current_user: dict = Depends
             VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (preference.exercise_id, preference.target_rep_min, preference.target_rep_max, preference.target_sets_per_session, preference.target_sessions_per_week, preference.estimated_1rm, current_user["id"])
         )
+        generate_queue(db, current_user["id"])
         return {"id": cursor.lastrowid, "name": preference.exercise_id, "message": "Exercise preference updated successfully"}
     
 @router.get("/preferences")
