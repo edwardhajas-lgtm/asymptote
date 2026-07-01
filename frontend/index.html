@@ -18,6 +18,18 @@
     <div id="app-section" style="display:none;">
         <p>Logged in.</p>
 
+        <h2>Push</h2>
+        <div id="push-list"></div>
+
+        <h2>Pull</h2>
+        <div id="pull-list"></div>
+
+        <h2>Legs</h2>
+        <div id="legs-list"></div>
+
+        <h2>Uncategorized</h2>
+        <div id="uncategorized-list"></div>
+
         <h2>Set Preferences</h2>
         <select id="exercise-select"></select>
         <input type="number" id="rep-min" placeholder="Rep min">
@@ -72,16 +84,21 @@
             const exercisesResponse = await fetch(API_URL + "/exercises");
             const exercises = await exercisesResponse.json();
 
-            const queueDiv = document.getElementById("queue-list");
-            queueDiv.innerHTML = "";
+            document.getElementById("push-list").innerHTML = "";
+            document.getElementById("pull-list").innerHTML = "";
+            document.getElementById("legs-list").innerHTML = "";
+            document.getElementById("uncategorized-list").innerHTML = "";
 
             for (const item of queue) {
                 const exercise = exercises.find(e => e.id === item.exercise_id);
                 const name = exercise ? exercise.name : "Unknown";
+                const repRange = item.target_rep_min && item.target_rep_max
+                    ? item.target_rep_min + "-" + item.target_rep_max + " reps"
+                    : "";
 
                 const div = document.createElement("div");
                 div.innerHTML = `
-                    <p>${name}</p>
+                    <p>${name} (${repRange})</p>
                     <input type="number" placeholder="Weight" id="weight-${item.id}">
                     <input type="number" placeholder="Reps" id="reps-${item.id}">
                     <input type="number" placeholder="RPE (optional)" id="rpe-${item.id}">
@@ -90,7 +107,13 @@
                     <button onclick="pushQueueItem(${item.id})">Push</button>
                     <hr>
                 `;
-                queueDiv.appendChild(div);
+
+                let targetContainerId = "uncategorized-list";
+                if (item.training_split === "push") targetContainerId = "push-list";
+                else if (item.training_split === "pull") targetContainerId = "pull-list";
+                else if (item.training_split === "legs") targetContainerId = "legs-list";
+
+                document.getElementById(targetContainerId).appendChild(div);
             }
         }
         async function completeQueueItem(id) {
