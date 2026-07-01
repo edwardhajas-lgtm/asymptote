@@ -95,10 +95,13 @@
                 const repRange = item.target_rep_min && item.target_rep_max
                     ? item.target_rep_min + "-" + item.target_rep_max + " reps"
                     : "";
+                const setsInfo = item.target_sets_per_session
+                    ? item.target_sets_per_session + " sets"
+                    : "";
 
                 const div = document.createElement("div");
                 div.innerHTML = `
-                    <p>${name} (${repRange})</p>
+                    <p>${name} (${setsInfo}, ${repRange})</p>
                     <input type="number" placeholder="Weight" id="weight-${item.id}">
                     <input type="number" placeholder="Reps" id="reps-${item.id}">
                     <input type="number" placeholder="RPE (optional)" id="rpe-${item.id}">
