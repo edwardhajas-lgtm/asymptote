@@ -18,16 +18,20 @@
     <div id="app-section" style="display:none;">
         <p>Logged in.</p>
 
-        <h2>Queue</h2>
-        <div id="queue-list"></div>
-
         <h2>Set Preferences</h2>
         <select id="exercise-select"></select>
         <input type="number" id="rep-min" placeholder="Rep min">
         <input type="number" id="rep-max" placeholder="Rep max">
         <input type="number" id="sets-per-session" placeholder="Sets per session">
         <input type="number" id="sessions-per-week" placeholder="Sessions per week">
+        <select id="training-split-select">
+            <option value="">No split</option>
+            <option value="push">Push</option>
+            <option value="pull">Pull</option>
+            <option value="legs">Legs</option>
+        </select>
         <button onclick="savePreference()">Save Preference</button>
+        <p id="preference-status"></p>
     </div>
 
     <script>
@@ -54,6 +58,7 @@
                 document.getElementById("login-section").style.display = "none";
                 document.getElementById("app-section").style.display = "block";
                 loadQueue();
+                populateExerciseDropdown();
             } else {
                 document.getElementById("login-status").innerText = "Login failed";
             }
@@ -124,6 +129,53 @@
             });
 
             alert("Set logged!");
+        }
+
+        async function populateExerciseDropdown() {
+            const response = await fetch(API_URL + "/exercises");
+            const exercises = await response.json();
+
+            const select = document.getElementById("exercise-select");
+            select.innerHTML = "";
+
+            for (const exercise of exercises) {
+                const option = document.createElement("option");
+                option.value = exercise.id;
+                option.innerText = exercise.name;
+                select.appendChild(option);
+            }
+        }
+
+        async function savePreference() {
+            const exerciseId = document.getElementById("exercise-select").value;
+            const repMin = document.getElementById("rep-min").value;
+            const repMax = document.getElementById("rep-max").value;
+            const setsPerSession = document.getElementById("sets-per-session").value;
+            const sessionsPerWeek = document.getElementById("sessions-per-week").value;
+            const trainingSplit = document.getElementById("training-split-select").value;
+
+            const response = await fetch(API_URL + "/preferences", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + token
+                },
+                body: JSON.stringify({
+                    exercise_id: parseInt(exerciseId),
+                    target_rep_min: parseInt(repMin),
+                    target_rep_max: parseInt(repMax),
+                    target_sets_per_session: parseInt(setsPerSession),
+                    target_sessions_per_week: parseInt(sessionsPerWeek),
+                    training_split: trainingSplit ? trainingSplit : null
+                })
+            });
+
+            if (response.ok) {
+                document.getElementById("preference-status").innerText = "Preference saved!";
+                loadQueue();
+            } else {
+                document.getElementById("preference-status").innerText = "Failed to save preference";
+            }
         }
     </script>
 

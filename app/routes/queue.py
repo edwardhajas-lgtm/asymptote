@@ -20,14 +20,22 @@ def get_queue(current_user: dict = Depends(get_current_user)):
             item_dict = dict(item)
 
             preference = db.execute(
-                """SELECT training_split FROM user_exercise_preferences
+                """SELECT training_split, target_rep_min, target_rep_max FROM user_exercise_preferences
                 WHERE user_id = ? AND exercise_id = ?
                 ORDER BY created_at DESC
                 LIMIT 1""",
                 (current_user["id"], item_dict["exercise_id"])
             ).fetchone()
 
-            item_dict["training_split"] = preference["training_split"] if preference else None
+            if preference:
+                item_dict["training_split"] = preference["training_split"]
+                item_dict["target_rep_min"] = preference["target_rep_min"]
+                item_dict["target_rep_max"] = preference["target_rep_max"]
+            else:
+                item_dict["training_split"] = None
+                item_dict["target_rep_min"] = None
+                item_dict["target_rep_max"] = None
+
             result.append(item_dict)
 
         return result
