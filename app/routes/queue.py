@@ -14,7 +14,23 @@ def get_queue(current_user: dict = Depends(get_current_user)):
             ORDER BY planned_order""",
             (current_user["id"],)
         ).fetchall()
-        return [dict(row) for row in queue]
+
+        result = []
+        for item in queue:
+            item_dict = dict(item)
+
+            preference = db.execute(
+                """SELECT training_split FROM user_exercise_preferences
+                WHERE user_id = ? AND exercise_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1""",
+                (current_user["id"], item_dict["exercise_id"])
+            ).fetchone()
+
+            item_dict["training_split"] = preference["training_split"] if preference else None
+            result.append(item_dict)
+
+        return result
 
 @router.patch("/queue/{planned_set_id}/complete")
 def complete_queue_item(planned_set_id: int, current_user: dict = Depends(get_current_user)):

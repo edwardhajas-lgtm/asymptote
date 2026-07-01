@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS user_exercise_preferences (
     target_rep_max INTEGER NOT NULL,
     target_sets_per_session INTEGER NOT NULL DEFAULT 3,
     target_sessions_per_week INTEGER NOT NULL DEFAULT 1,
+    training_split TEXT,
     estimated_1rm REAL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

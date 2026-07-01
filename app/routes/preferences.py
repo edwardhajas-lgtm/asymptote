@@ -14,6 +14,7 @@ class PreferenceCreate(BaseModel):
     target_sets_per_session: int
     target_sessions_per_week: int
     estimated_1rm: Optional[float] = None
+    training_split: Optional[str] = None
 
 @router.post("/preferences")
 def create_preference(preference: PreferenceCreate, current_user: dict = Depends(get_current_user)):
@@ -25,9 +26,9 @@ def create_preference(preference: PreferenceCreate, current_user: dict = Depends
         if not existing:
             raise HTTPException(status_code=400, detail="Exercise does not exist")
         cursor = db.execute(
-            """INSERT INTO user_exercise_preferences (exercise_id, target_rep_min, target_rep_max, target_sets_per_session, target_sessions_per_week, estimated_1rm, user_id) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (preference.exercise_id, preference.target_rep_min, preference.target_rep_max, preference.target_sets_per_session, preference.target_sessions_per_week, preference.estimated_1rm, current_user["id"])
+            """INSERT INTO user_exercise_preferences (exercise_id, target_rep_min, target_rep_max, target_sets_per_session, target_sessions_per_week, estimated_1rm, training_split, user_id) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (preference.exercise_id, preference.target_rep_min, preference.target_rep_max, preference.target_sets_per_session, preference.target_sessions_per_week, preference.estimated_1rm, preference.training_split, current_user["id"])
         )
         generate_queue(db, current_user["id"])
         return {"id": cursor.lastrowid, "name": preference.exercise_id, "message": "Exercise preference updated successfully"}
